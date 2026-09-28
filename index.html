@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mindmap Canvas</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">Mindmap</div>
+    <div class="group">
+      <button data-add="rect" title="사각형 추가">▭ 사각형</button>
+      <button data-add="ellipse" title="원 추가">◯ 원</button>
+      <button data-add="diamond" title="마름모 추가">◇ 마름모</button>
+      <button data-add="text" title="텍스트 추가">T 텍스트</button>
+    </div>
+    <div class="group">
+      <button id="btn-undo" title="실행 취소 (Ctrl+Z)">↶</button>
+      <button id="btn-redo" title="다시 실행 (Ctrl+Shift+Z)">↷</button>
+      <button id="btn-delete" title="선택 항목 삭제 (Delete)">삭제</button>
+    </div>
+    <div class="group">
+      <button id="btn-zoom-out" title="축소">−</button>
+      <span id="zoom-label">100%</span>
+      <button id="btn-zoom-in" title="확대">+</button>
+      <button id="btn-fit" title="전체 보기">전체 보기</button>
+    </div>
+    <div class="group right">
+      <button id="btn-export" title="JSON으로 저장">내보내기</button>
+      <button id="btn-import" title="JSON 불러오기">불러오기</button>
+      <button id="btn-clear" title="모두 지우기">초기화</button>
+      <input id="file-input" type="file" accept="application/json" hidden />
+    </div>
+  </header>
+
+  <main id="viewport">
+    <div id="world">
+      <svg id="edges" width="1" height="1">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="arrow-head" />
+          </marker>
+          <marker id="arrow-selected" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="arrow-head selected" />
+          </marker>
+        </defs>
+        <g id="edge-layer"></g>
+        <path id="draft-edge" d="" />
+      </svg>
+      <div id="node-layer"></div>
+    </div>
+    <div class="hint">
+      빈 곳 드래그: 이동 · 휠: 확대/축소 · 더블클릭: 이름 변경 · 점(●) 드래그: 화살표 연결 · 선택 후 +/−: 화살표 포트 개수 조절
+    </div>
+  </main>
+
+  <aside id="panel" hidden>
+    <h3>속성</h3>
+    <label>이름
+      <textarea id="prop-label" rows="2"></textarea>
+    </label>
+    <label>모양
+      <select id="prop-type">
+        <option value="rect">사각형</option>
+        <option value="ellipse">원</option>
+        <option value="diamond">마름모</option>
+        <option value="text">텍스트</option>
+      </select>
+    </label>
+    <label>색상
+      <div id="prop-colors" class="swatches"></div>
+    </label>
+    <div class="ports-row">
+      <div>
+        <span>왼쪽 포트</span>
+        <div class="stepper"><button data-port="left" data-d="-1">−</button><b id="prop-left">1</b><button data-port="left" data-d="1">+</button></div>
+      </div>
+      <div>
+        <span>오른쪽 포트</span>
+        <div class="stepper"><button data-port="right" data-d="-1">−</button><b id="prop-right">1</b><button data-port="right" data-d="1">+</button></div>
+      </div>
+    </div>
+  </aside>
+
+  <script src="app.js"></script>
+</body>
+</html>

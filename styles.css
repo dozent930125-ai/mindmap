@@ -1,0 +1,248 @@
+:root {
+  --bg: #f4f5f8;
+  --grid: #d9dce3;
+  --panel: #ffffff;
+  --border: #d0d4dc;
+  --text: #1f2330;
+  --muted: #6b7280;
+  --accent: #ff6d5a;
+  --edge: #8a91a0;
+  --port: #ffffff;
+  --port-border: #8a91a0;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ---------- Toolbar ---------- */
+.toolbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+  overflow-x: auto;
+}
+.brand { font-weight: 700; color: var(--accent); margin-right: 4px; white-space: nowrap; }
+.group { display: flex; align-items: center; gap: 4px; padding-right: 12px; border-right: 1px solid var(--border); }
+.group.right { margin-left: auto; border-right: none; padding-right: 0; }
+.group:last-child { border-right: none; }
+#zoom-label { min-width: 46px; text-align: center; font-size: 13px; color: var(--muted); }
+
+button {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: .4; cursor: default; color: inherit; border-color: var(--border); }
+
+/* ---------- Canvas ---------- */
+#viewport {
+  position: fixed;
+  top: 52px; left: 0; right: 0; bottom: 0;
+  overflow: hidden;
+  cursor: grab;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--grid) 1.2px, transparent 1.2px);
+  touch-action: none;
+  user-select: none;
+}
+#viewport.panning { cursor: grabbing; }
+
+#world {
+  position: absolute;
+  left: 0; top: 0;
+  width: 0; height: 0;
+  transform-origin: 0 0;
+}
+
+#edges {
+  position: absolute;
+  left: 0; top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.edge { fill: none; stroke: var(--edge); stroke-width: 2; }
+.edge.selected { stroke: var(--accent); stroke-width: 2.5; }
+.edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+.edge-hit:hover + .edge { stroke: #5b6170; }
+.arrow-head { fill: var(--edge); }
+.arrow-head.selected { fill: var(--accent); }
+#draft-edge { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; }
+
+#node-layer { position: absolute; left: 0; top: 0; }
+
+/* ---------- Nodes ---------- */
+.node {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+}
+.node .shape {
+  position: absolute;
+  inset: 0;
+  background: var(--fill, #fff);
+  border: 2px solid var(--stroke, #9aa1ae);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.node.ellipse .shape { border-radius: 50%; }
+.node.diamond .shape { background: none; border: none; box-shadow: none; }
+.node.diamond .shape svg { width: 100%; height: 100%; overflow: visible; }
+.node.diamond .shape polygon { fill: var(--fill, #fff); stroke: var(--stroke, #9aa1ae); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.node.text .shape { background: transparent; border: 1px dashed transparent; box-shadow: none; }
+.node.text:hover .shape, .node.text.selected .shape { border-color: #b8bdc8; }
+
+.node.selected .shape { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,109,90,.2); }
+.node.diamond.selected .shape polygon { stroke: var(--accent); }
+.node.diamond.selected .shape { box-shadow: none; }
+
+.node .label {
+  position: relative;
+  max-width: 100%;
+  padding: 6px 12px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+  pointer-events: none;
+}
+.node.diamond .label { padding: 6px 22%; }
+.node.text .label { font-size: 16px; }
+.node .label.editing {
+  pointer-events: auto;
+  cursor: text;
+  user-select: text;
+  background: rgba(255,255,255,.9);
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--accent);
+  min-width: 40px;
+}
+.node .label:empty::before { content: "이름 없음"; color: #b3b8c2; }
+.node .label.editing:empty::before { content: ""; }
+
+/* Ports */
+.port {
+  position: absolute;
+  width: 14px; height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--port);
+  border: 2px solid var(--port-border);
+  cursor: crosshair;
+  z-index: 2;
+}
+.port:hover, .port.target { background: var(--accent); border-color: var(--accent); transform: scale(1.25); }
+.port.connected { background: var(--port-border); }
+
+/* Port count controls shown for selected node */
+.port-ctrl {
+  position: absolute;
+  top: 100%;
+  margin-top: 8px;
+  display: none;
+  align-items: center;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  font-size: 12px;
+  cursor: default;
+  z-index: 3;
+  white-space: nowrap;
+}
+.node.selected .port-ctrl { display: flex; }
+.port-ctrl.left { left: -8px; }
+.port-ctrl.right { right: -8px; }
+.port-ctrl button { padding: 0 6px; font-size: 13px; line-height: 18px; border: none; }
+.port-ctrl span { color: var(--muted); padding: 0 2px; }
+
+/* Resize handle */
+.resize {
+  position: absolute;
+  right: -5px; bottom: -5px;
+  width: 12px; height: 12px;
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 3px;
+  cursor: nwse-resize;
+  display: none;
+  z-index: 3;
+}
+.node.selected .resize { display: block; }
+
+/* ---------- Hint ---------- */
+.hint {
+  position: absolute;
+  left: 50%; bottom: 12px;
+  transform: translateX(-50%);
+  background: rgba(255,255,255,.92);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+  max-width: calc(100% - 32px);
+  text-align: center;
+}
+
+/* ---------- Properties panel ---------- */
+#panel {
+  position: fixed;
+  top: 64px; right: 12px;
+  width: 240px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.08);
+  z-index: 9;
+  font-size: 13px;
+}
+#panel[hidden] { display: none; }
+#panel h3 { margin: 0 0 10px; font-size: 14px; }
+#panel label { display: block; margin-bottom: 10px; color: var(--muted); }
+#panel textarea, #panel select {
+  display: block; width: 100%; margin-top: 4px;
+  font: inherit; color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px;
+  resize: vertical;
+}
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.swatch.active { border-color: var(--text); }
+.ports-row { display: flex; gap: 8px; }
+.ports-row > div { flex: 1; color: var(--muted); }
+.stepper { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.stepper button { padding: 2px 9px; }
+.stepper b { min-width: 16px; text-align: center; color: var(--text); }
+
+@media (max-width: 640px) {
+  #panel { top: auto; bottom: 56px; left: 16px; right: 16px; width: auto; }
+  .hint { display: none; }
+}
