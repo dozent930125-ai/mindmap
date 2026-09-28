@@ -1,6 +1,8 @@
-// 하루 매출 계산: 결제된 주문 합계 − 취소/반품 완료 금액
+// 하루 매출 계산: 결제된 주문 합계 − 취소/반품 금액
 
-const REFUND_CLAIMS = ['CANCEL_COMPLETE', 'RETURN_COMPLETE'];
+// 아임웹 v2 주문 목록은 claim_status에 *_REQUEST 값만 받으므로, 완료된 취소·반품은
+// status=CANCEL / RETURN 으로 조회합니다. 품목 주문(prod-orders)도 status 필드에 같은 값이 옵니다.
+const REFUND_STATUSES = ['CANCEL', 'RETURN'];
 // Cloudflare 무료 플랜은 요청 1건당 외부 호출 50회 제한이 있어 품목 조회 횟수를 제한합니다.
 const MAX_PROD_ORDER_LOOKUPS = 30;
 
@@ -21,7 +23,7 @@ function lineTotal(prodOrder) {
  */
 function refundFor(order, prodOrders) {
   const paid = amountOf(order);
-  const refunded = prodOrders.filter((p) => REFUND_CLAIMS.includes(p.claim_status));
+  const refunded = prodOrders.filter((p) => REFUND_STATUSES.includes(p.status));
   if (prodOrders.length === 0 || refunded.length === prodOrders.length) {
     return { amount: paid, partial: false };
   }
@@ -42,8 +44,8 @@ export async function dailyRevenue(client, range) {
   const unpaid = new Set((await client.listOrders({ ...base, status: 'PAY_WAIT' })).map(keyOf));
 
   const claimed = new Set();
-  for (const claim of REFUND_CLAIMS) {
-    for (const o of await client.listOrders({ ...base, claim_status: claim })) claimed.add(keyOf(o));
+  for (const status of REFUND_STATUSES) {
+    for (const o of await client.listOrders({ ...base, status })) claimed.add(keyOf(o));
   }
 
   let gross = 0;

@@ -6,8 +6,19 @@ const TOKEN_KEY = 'imweb:token';
 const TOKEN_TTL_SEC = 50 * 60;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 20;
+// 아임웹은 짧은 시간에 요청이 몰리면 code -7(TOO MANY REQUEST)을 돌려줍니다.
+const RATE_LIMIT_CODE = -7;
+const RATE_LIMIT_RETRIES = 3;
+const RATE_LIMIT_WAIT_MS = 700;
 
-export class ImwebError extends Error {}
+export class ImwebError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.code = code;
+  }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function call(url, init) {
   const res = await fetch(url, init);
@@ -20,7 +31,8 @@ async function call(url, init) {
   }
   // v2 API는 HTTP 200이어도 본문 code로 오류를 알려줍니다.
   if (!res.ok || (body.code !== undefined && Number(body.code) !== 200)) {
-    throw new ImwebError(`아임웹 오류: ${body.msg ?? 'unknown'} (code ${body.code ?? res.status})`);
+    const code = Number(body.code ?? res.status);
+    throw new ImwebError(`아임웹 오류: ${body.msg ?? 'unknown'} (code ${code})`, code);
   }
   return body;
 }
@@ -56,14 +68,23 @@ export function createClient(env) {
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     }
-    // 캐시된 토큰이 만료됐을 수 있으니 실패하면 새 토큰으로 한 번 재시도
-    for (let attempt = 0; ; attempt++) {
-      token ??= attempt === 0 ? await env.KV.get(TOKEN_KEY) : null;
+    // 캐시된 토큰이 만료됐을 수 있으니 실패하면 새 토큰으로 한 번 재시도,
+    // 요청 과다(-7)면 잠시 쉬었다가 다시 시도
+    let renewed = false;
+    for (let waits = 0; ; ) {
+      token ??= renewed ? null : await env.KV.get(TOKEN_KEY);
       token ??= await issueToken(env);
       try {
         return await call(url, { headers: { 'access-token': token } });
       } catch (e) {
-        if (attempt > 0 || !(e instanceof ImwebError)) throw e;
+        if (!(e instanceof ImwebError)) throw e;
+        if (e.code === RATE_LIMIT_CODE) {
+          if (waits >= RATE_LIMIT_RETRIES) throw e;
+          await sleep(RATE_LIMIT_WAIT_MS * ++waits);
+          continue;
+        }
+        if (renewed) throw e;
+        renewed = true;
         token = null;
       }
     }

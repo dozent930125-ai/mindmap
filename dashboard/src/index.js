@@ -96,8 +96,6 @@ async function handleDebug(url, env) {
   if (sample) {
     prodOrders = (await client.listProdOrders(String(sample.order_no))).map((p) => ({
       status: p.status,
-      claim_status: p.claim_status,
-      claim_type: p.claim_type,
       items: (p.items ?? []).map((i) => ({ payment: i.payment })),
     }));
   }

@@ -23,7 +23,7 @@ function mockImweb() {
     if (url.pathname === '/v2/auth') return Response.json({ code: 200, msg: 'SUCCESS', access_token: 'tok' });
     assert.equal(init.headers['access-token'], 'tok');
     if (url.pathname === '/v2/shop/orders') {
-      const list = url.searchParams.has('status') || url.searchParams.has('claim_status')
+      const list = url.searchParams.has('status')
         ? [] : [{ order_no: 1, payment: { payment_amount: 100000 } }];
       return Response.json({ code: 200, msg: 'SUCCESS', data: { pagenation: { total_page: 1 }, list } });
     }
@@ -92,4 +92,18 @@ test('아임웹 오류는 메시지와 함께 502', async () => {
   const res = await worker.fetch(req('/api/summary?date=2026-09-27', { headers: auth }), env());
   assert.equal(res.status, 502);
   assert.match((await res.json()).error, /invalid key/);
+});
+
+test('요청 과다(-7)면 잠시 후 재시도', async () => {
+  let orderCalls = 0;
+  globalThis.fetch = async (input) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === '/v2/auth') return Response.json({ code: 200, access_token: 'tok' });
+    if (++orderCalls === 1) return Response.json({ code: -7, msg: 'TOO MANY REQUEST' });
+    const list = url.searchParams.has('status') ? [] : [{ order_no: 1, payment: { payment_amount: 5000 } }];
+    return Response.json({ code: 200, data: { pagenation: { total_page: 1 }, list } });
+  };
+  const res = await worker.fetch(req('/api/summary?date=2026-09-27', { headers: auth }), env());
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).revenue, 5000);
 });

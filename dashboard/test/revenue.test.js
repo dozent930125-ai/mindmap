@@ -4,14 +4,14 @@ import { dailyRevenue, profitSummary } from '../src/revenue.js';
 import { kstDayRange, todayKst, isValidDate } from '../src/dates.js';
 
 const order = (no, amount) => ({ order_no: no, payment: { payment_amount: amount } });
-const prod = (claim, price, count = 1) => ({ claim_status: claim, items: [{ payment: { price, count } }] });
+const prod = (status, price, count = 1) => ({ status, items: [{ payment: { price, count } }] });
 
 function fakeClient({ orders, unpaid = [], cancel = [], ret = [], prodOrders = {} }) {
   return {
     async listOrders(params) {
       if (params.status === 'PAY_WAIT') return unpaid;
-      if (params.claim_status === 'CANCEL_COMPLETE') return cancel;
-      if (params.claim_status === 'RETURN_COMPLETE') return ret;
+      if (params.status === 'CANCEL') return cancel;
+      if (params.status === 'RETURN') return ret;
       return orders;
     },
     async listProdOrders(no) { return prodOrders[no] ?? []; },
@@ -25,7 +25,7 @@ test('결제 주문 합계에서 입금대기·전체취소·반품을 제외', 
     unpaid: [orders[0]],
     cancel: [orders[1]],
     ret: [orders[2]],
-    prodOrders: { 2: [prod('CANCEL_COMPLETE', 20000)], 3: [prod('RETURN_COMPLETE', 30000)] },
+    prodOrders: { 2: [prod('CANCEL', 20000)], 3: [prod('RETURN', 30000)] },
   }), { from: 0, to: 1 });
   assert.equal(r.grossRevenue, 90000);
   assert.equal(r.refunds, 50000);
@@ -40,7 +40,7 @@ test('부분취소는 품목 금액 비율로 추정', async () => {
   const r = await dailyRevenue(fakeClient({
     orders,
     cancel: [orders[0]],
-    prodOrders: { 1: [prod('CANCEL_COMPLETE', 10000), prod(null, 10000, 2)] },
+    prodOrders: { 1: [prod('CANCEL', 10000), prod('COMPLETE', 10000, 2)] },
   }), { from: 0, to: 1 });
   assert.equal(r.refunds, 9000);
   assert.equal(r.revenue, 18000);

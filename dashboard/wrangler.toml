@@ -6,7 +6,7 @@ compatibility_date = "2025-09-01"
 # `npx wrangler kv namespace create KV` 실행 후 출력된 id로 바꿔주세요.
 [[kv_namespaces]]
 binding = "KV"
-id = "REPLACE_WITH_KV_ID"
+id = "1d9d10e012ea43d087edc5352a67873c"
 
 [vars]
 # 매출 전체에 적용하는 수수료율 (2.25%)
