@@ -4,7 +4,7 @@ import { dailyRevenue, profitSummary } from './revenue.js';
 import { PAGE_HTML } from './page.js';
 
 const REVENUE_CACHE_TTL_SEC = 60;
-const PAST_REVENUE_CACHE_TTL_SEC = 600;
+const PAST_REVENUE_CACHE_TTL_SEC = 1800;
 const MAX_AD_SPEND = 1_000_000_000_000;
 
 const json = (data, status = 200) =>

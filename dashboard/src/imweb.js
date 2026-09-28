@@ -6,10 +6,11 @@ const TOKEN_KEY = 'imweb:token';
 const TOKEN_TTL_SEC = 50 * 60;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 20;
-// 아임웹은 짧은 시간에 요청이 몰리면 code -7(TOO MANY REQUEST)을 돌려줍니다.
+// 아임웹은 약 1초에 1건보다 자주 요청하면 code -7(TOO MANY REQUEST)을 돌려줍니다.
+// 그래서 요청 사이에 간격을 두고, 그래도 걸리면 조금 더 기다렸다가 다시 시도합니다.
 const RATE_LIMIT_CODE = -7;
-const RATE_LIMIT_RETRIES = 3;
-const RATE_LIMIT_WAIT_MS = 700;
+const RATE_LIMIT_RETRIES = 4;
+const DEFAULT_GAP_MS = 800;
 
 export class ImwebError extends Error {
   constructor(message, code) {
@@ -37,7 +38,7 @@ async function call(url, init) {
   return body;
 }
 
-async function issueToken(env) {
+async function issueToken(env, call) {
   const url = new URL(`${API}/auth`);
   url.searchParams.set('key', env.IMWEB_API_KEY);
   url.searchParams.set('secret', env.IMWEB_SECRET_KEY);
@@ -62,6 +63,19 @@ export function createClient(env) {
     throw new ImwebError('IMWEB_API_KEY / IMWEB_SECRET_KEY 비밀값이 등록되지 않았습니다');
   }
   let token = null;
+  const gapMs = Number(env.IMWEB_MIN_GAP_MS ?? DEFAULT_GAP_MS);
+  let lastDone = 0;
+
+  // 직전 요청이 끝난 뒤 gapMs만큼 쉬었다가 호출
+  async function paced(url, init) {
+    const wait = lastDone + gapMs - Date.now();
+    if (wait > 0) await sleep(wait);
+    try {
+      return await call(url, init);
+    } finally {
+      lastDone = Date.now();
+    }
+  }
 
   async function get(path, params = {}) {
     const url = new URL(API + path);
@@ -73,14 +87,14 @@ export function createClient(env) {
     let renewed = false;
     for (let waits = 0; ; ) {
       token ??= renewed ? null : await env.KV.get(TOKEN_KEY);
-      token ??= await issueToken(env);
+      token ??= await issueToken(env, paced);
       try {
-        return await call(url, { headers: { 'access-token': token } });
+        return await paced(url, { headers: { 'access-token': token } });
       } catch (e) {
         if (!(e instanceof ImwebError)) throw e;
         if (e.code === RATE_LIMIT_CODE) {
           if (waits >= RATE_LIMIT_RETRIES) throw e;
-          await sleep(RATE_LIMIT_WAIT_MS * ++waits);
+          await sleep(gapMs * ++waits);
           continue;
         }
         if (renewed) throw e;

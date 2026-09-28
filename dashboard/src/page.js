@@ -163,9 +163,14 @@ export const PAGE_HTML = String.raw`<!doctype html>
     $('date').textContent = current + (current === today() ? ' (오늘)' : '');
     $('next').disabled = current >= today();
     $('error').textContent = '';
+    var shown = current;
+    var slow = setTimeout(function () {
+      if (shown === current) $('meta').textContent = '아임웹에서 불러오는 중… (지난 날짜는 10초 정도 걸릴 수 있어요)';
+    }, 800);
     return api('/api/summary?date=' + current + (fresh ? '&fresh=1' : ''))
-      .then(render)
-      .catch(function (e) { if (e.message !== 'unauthorized') $('error').textContent = e.message; });
+      .then(function (s) { if (shown === current) render(s); })
+      .catch(function (e) { if (shown === current && e.message !== 'unauthorized') $('error').textContent = e.message; })
+      .then(function () { clearTimeout(slow); });
   }
 
   function start() {

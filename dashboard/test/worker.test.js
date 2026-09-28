@@ -11,7 +11,7 @@ function memoryKV() {
   };
 }
 
-const env = () => ({ KV: memoryKV(), FEE_RATE: '0.0225', DASHBOARD_PASSWORD: 'pw', IMWEB_API_KEY: 'k', IMWEB_SECRET_KEY: 's' });
+const env = () => ({ KV: memoryKV(), FEE_RATE: '0.0225', DASHBOARD_PASSWORD: 'pw', IMWEB_API_KEY: 'k', IMWEB_SECRET_KEY: 's', IMWEB_MIN_GAP_MS: '0' });
 const req = (path, init = {}) => new Request('https://x.dev' + path, init);
 const auth = { 'x-dashboard-key': 'pw' };
 
