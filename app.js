@@ -9,14 +9,18 @@
   const MAX_PORTS = 12;
   const PORT_GAP = 8; // arrow tip stops this far outside the port centre
 
-  const COLORS = [
-    { fill: '#ffffff', stroke: '#9aa1ae' },
-    { fill: '#fff1ee', stroke: '#ff6d5a' },
-    { fill: '#fff7e0', stroke: '#e6a700' },
-    { fill: '#eaf8ee', stroke: '#2fa65a' },
-    { fill: '#e8f1ff', stroke: '#3b7ddd' },
-    { fill: '#f3ecff', stroke: '#8a5cf6' },
-    { fill: '#f1f2f4', stroke: '#4b5263' },
+  const EDGE_STUB = 20; // minimum straight run out of / into a port
+  const CORNER_RADIUS = 10;
+
+  const TRANSPARENT = 'transparent';
+  const FILL_COLORS = [TRANSPARENT, '#ffffff', '#f3f4f6', '#fff1ee', '#fff6db', '#e9f8ef', '#e8f1ff', '#f2ecff', '#fdecf5', '#1f2330'];
+  const STROKE_COLORS = ['#cfd4dc', '#9aa1ae', '#1f2330', '#ff6d5a', '#f0a500', '#22a55b', '#3b7ddd', '#8a5cf6', '#e2559b'];
+  const TEXT_COLORS = ['#1f2330', '#4b5563', '#9aa1ae', '#ffffff', '#ff6d5a', '#d48a00', '#1f9d55', '#2f6fd6', '#7c4ddf'];
+
+  // Palette from the first version, used to migrate saved maps.
+  const LEGACY_COLORS = [
+    ['#ffffff', '#9aa1ae'], ['#fff1ee', '#ff6d5a'], ['#fff7e0', '#e6a700'], ['#eaf8ee', '#2fa65a'],
+    ['#e8f1ff', '#3b7ddd'], ['#f3ecff', '#8a5cf6'], ['#f1f2f4', '#4b5263'],
   ];
 
   const DEFAULT_SIZE = {
@@ -27,6 +31,19 @@
   };
 
   const DEFAULT_LABEL = { rect: '새 도형', ellipse: '새 원', diamond: '조건', text: '텍스트' };
+
+  const SHAPE_STYLE = { fill: '#ffffff', stroke: '#cfd4dc', strokeWidth: 1.5, textColor: '#1f2330', fontSize: 15, fontWeight: 500 };
+  const TEXT_STYLE = { fill: TRANSPARENT, stroke: '#1f2330', strokeWidth: 0, textColor: '#1f2330', fontSize: 18, fontWeight: 600 };
+  const defaultStyle = (type) => ({ ...(type === 'text' ? TEXT_STYLE : SHAPE_STYLE) });
+
+  function migrateNode(n) {
+    if (n.fill === undefined) {
+      const [fill, stroke] = LEGACY_COLORS[n.color || 0] || LEGACY_COLORS[0];
+      Object.assign(n, n.type === 'text' ? { ...TEXT_STYLE, stroke } : { ...SHAPE_STYLE, fill, stroke });
+      delete n.color;
+    }
+    return n;
+  }
 
   // ---------- DOM ----------
   const $ = (s) => document.querySelector(s);
@@ -39,7 +56,13 @@
   const panel = $('#panel');
   const propLabel = $('#prop-label');
   const propType = $('#prop-type');
-  const propColors = $('#prop-colors');
+  const propWeight = $('#prop-weight');
+  const propSize = $('#prop-size');
+  const propTextColor = $('#prop-text-color');
+  const propFill = $('#prop-fill');
+  const propStroke = $('#prop-stroke');
+  const propStrokeWidth = $('#prop-stroke-width');
+  const propStrokeWidthLabel = $('#prop-stroke-width-label');
   const propLeft = $('#prop-left');
   const propRight = $('#prop-right');
   const btnUndo = $('#btn-undo');
@@ -56,6 +79,7 @@
   const undoStack = [];
   const redoStack = [];
   const nodeEls = new Map();
+  let lastEdit = { key: null, time: 0 };
 
   const uid = () => Math.random().toString(36).slice(2, 10);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -65,6 +89,7 @@
 
   // ---------- History & persistence ----------
   function checkpoint() {
+    lastEdit = { key: null, time: 0 };
     undoStack.push(snapshot());
     if (undoStack.length > 200) undoStack.shift();
     redoStack.length = 0;
@@ -82,6 +107,7 @@
 
   function undo() {
     if (!undoStack.length) return;
+    lastEdit = { key: null, time: 0 };
     redoStack.push(snapshot());
     restore(undoStack.pop());
     updateHistoryButtons();
@@ -114,7 +140,7 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return false;
       const data = JSON.parse(raw);
-      state = { nodes: data.nodes || [], edges: data.edges || [] };
+      state = { nodes: (data.nodes || []).map(migrateNode), edges: data.edges || [] };
       if (data.view) view = data.view;
       return true;
     } catch (_) {
@@ -148,13 +174,84 @@
     return { x: node.x + p.x, y: node.y + p.y };
   }
 
-  function curve(p1, dir1, p2, dir2) {
-    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-    const c = Math.max(40, Math.min(160, Math.abs(p2.x - p1.x) / 2 + dist / 6));
-    return `M${p1.x},${p1.y} C${p1.x + dir1 * c},${p1.y} ${p2.x + dir2 * c},${p2.y} ${p2.x},${p2.y}`;
+  const sideDir = (side) => (side === 'left' ? -1 : 1);
+  const nodeBox = (n) => ({ top: n.y, bottom: n.y + n.h });
+
+  // Push y past any node the horizontal run [x0, x1] would cut through.
+  function clearY(y, x0, x1, dir) {
+    for (let guard = 0; guard < 50; guard++) {
+      const hit = state.nodes.find((n) => n.x < x1 && n.x + n.w > x0 &&
+        y > n.y - EDGE_STUB / 2 && y < n.y + n.h + EDGE_STUB / 2);
+      if (!hit) return y;
+      y = dir > 0 ? hit.y + hit.h + EDGE_STUB : hit.y - EDGE_STUB;
+    }
+    return y;
   }
 
-  const sideDir = (side) => (side === 'left' ? -1 : 1);
+  // A horizontal line that clears both end boxes (and other nodes), used when an edge has to double back.
+  function detourY(p1, p2, a, b, x0, x1) {
+    const cost = (y) => Math.abs(y - p1.y) + Math.abs(y - p2.y);
+    const candidates = [
+      clearY(Math.max(a.bottom, b.bottom) + EDGE_STUB * 1.5, x0, x1, 1),
+      clearY(Math.min(a.top, b.top) - EDGE_STUB * 1.5, x0, x1, -1),
+    ];
+    const gapTop = Math.min(a.bottom, b.bottom);
+    const gapBottom = Math.max(a.top, b.top);
+    if (gapBottom - gapTop >= EDGE_STUB * 2) {
+      const mid = (gapTop + gapBottom) / 2;
+      if (clearY(mid, x0, x1, 1) === mid) candidates.push(mid);
+    }
+    return candidates.reduce((best, y) => (cost(y) < cost(best) ? y : best));
+  }
+
+  // Orthogonal route: leaves p1 horizontally in dir1 and enters p2 horizontally from dir2's side.
+  function orthoPoints(p1, d1, p2, d2, boxA, boxB) {
+    const s1x = p1.x + d1 * EDGE_STUB;
+    const s2x = p2.x + d2 * EDGE_STUB;
+    if (d1 !== d2) {
+      if ((s2x - s1x) * d1 >= 0) {
+        // Target lies ahead: one vertical run halfway between.
+        const mx = Math.round((p1.x + p2.x) / 2);
+        return [p1, { x: mx, y: p1.y }, { x: mx, y: p2.y }, p2];
+      }
+      // Target is behind: go out, around, and back in.
+      const my = detourY(p1, p2, boxA, boxB, Math.min(s1x, s2x), Math.max(s1x, s2x));
+      return [p1, { x: s1x, y: p1.y }, { x: s1x, y: my }, { x: s2x, y: my }, { x: s2x, y: p2.y }, p2];
+    }
+    // Both ports face the same way: run past the outermost one.
+    const x = d1 > 0 ? Math.max(s1x, s2x) : Math.min(s1x, s2x);
+    return [p1, { x, y: p1.y }, { x, y: p2.y }, p2];
+  }
+
+  // Polyline with rounded corners.
+  function roundedPath(pts) {
+    const clean = [];
+    for (const p of pts) {
+      const last = clean[clean.length - 1];
+      if (last && Math.abs(last.x - p.x) < 0.5 && Math.abs(last.y - p.y) < 0.5) continue;
+      clean.push(p);
+    }
+    for (let i = clean.length - 2; i > 0; i--) {
+      const a = clean[i - 1], b = clean[i], c = clean[i + 1];
+      if ((Math.abs(a.x - b.x) < 0.5 && Math.abs(b.x - c.x) < 0.5) || (Math.abs(a.y - b.y) < 0.5 && Math.abs(b.y - c.y) < 0.5)) {
+        clean.splice(i, 1);
+      }
+    }
+    let d = `M${clean[0].x},${clean[0].y}`;
+    for (let i = 1; i < clean.length - 1; i++) {
+      const prev = clean[i - 1], cur = clean[i], next = clean[i + 1];
+      const l1 = Math.hypot(cur.x - prev.x, cur.y - prev.y);
+      const l2 = Math.hypot(next.x - cur.x, next.y - cur.y);
+      const r = Math.min(CORNER_RADIUS, l1 / 2, l2 / 2);
+      const ax = cur.x - ((cur.x - prev.x) / l1) * r;
+      const ay = cur.y - ((cur.y - prev.y) / l1) * r;
+      const bx = cur.x + ((next.x - cur.x) / l2) * r;
+      const by = cur.y + ((next.y - cur.y) / l2) * r;
+      d += ` L${ax},${ay} Q${cur.x},${cur.y} ${bx},${by}`;
+    }
+    const end = clean[clean.length - 1];
+    return `${d} L${end.x},${end.y}`;
+  }
 
   function edgePath(edge) {
     const a = findNode(edge.from.node);
@@ -163,7 +260,8 @@
     const p1 = portWorld(a, edge.from.side, edge.from.index);
     const p2 = portWorld(b, edge.to.side, edge.to.index);
     const d2 = sideDir(edge.to.side);
-    return curve(p1, sideDir(edge.from.side), { x: p2.x + d2 * PORT_GAP, y: p2.y }, d2);
+    const tip = { x: p2.x + d2 * PORT_GAP, y: p2.y };
+    return roundedPath(orthoPoints(p1, sideDir(edge.from.side), tip, d2, nodeBox(a), nodeBox(b)));
   }
 
   // ---------- Rendering ----------
@@ -252,16 +350,21 @@
       nodeLayer.appendChild(el);
     }
     el.className = `node ${node.type}` +
-      (selection && selection.kind === 'node' && selection.id === node.id ? ' selected' : '');
+      (selection && selection.kind === 'node' && selection.id === node.id ? ' selected' : '') +
+      (node.fill === TRANSPARENT ? ' no-fill' : '') +
+      (!node.strokeWidth ? ' no-stroke' : '');
     el.style.left = `${node.x}px`;
     el.style.top = `${node.y}px`;
     el.style.width = `${node.w}px`;
     el.style.height = `${node.h}px`;
-    const color = COLORS[node.color] || COLORS[0];
-    el.style.setProperty('--fill', color.fill);
-    el.style.setProperty('--stroke', color.stroke);
+    el.style.setProperty('--fill', node.fill);
+    el.style.setProperty('--stroke', node.stroke);
+    el.style.setProperty('--sw', `${node.strokeWidth}px`);
     syncShape(el, node);
     const label = el.querySelector('.label');
+    label.style.color = node.textColor;
+    label.style.fontSize = `${node.fontSize}px`;
+    label.style.fontWeight = String(node.fontWeight);
     if (editingId !== node.id && label.textContent !== node.label) label.textContent = node.label;
     syncPorts(el, node);
   }
@@ -306,10 +409,16 @@
     btnDelete.disabled = !selection;
     if (!node) return;
     if (document.activeElement !== propLabel) propLabel.value = node.label;
-    propType.value = node.type;
+    [...propType.children].forEach((b) => b.classList.toggle('active', b.dataset.type === node.type));
+    propWeight.value = String(node.fontWeight);
+    if (document.activeElement !== propSize) propSize.value = node.fontSize;
+    propStrokeWidth.value = node.strokeWidth;
+    propStrokeWidthLabel.textContent = node.strokeWidth ? `${node.strokeWidth}px` : '없음';
+    syncSwatches(propTextColor, node.textColor);
+    syncSwatches(propFill, node.fill);
+    syncSwatches(propStroke, node.stroke);
     propLeft.textContent = node.ports.left;
     propRight.textContent = node.ports.right;
-    [...propColors.children].forEach((s, i) => s.classList.toggle('active', i === (node.color || 0)));
   }
 
   function render() {
@@ -337,7 +446,7 @@
       w: size.w,
       h: size.h,
       label: DEFAULT_LABEL[type],
-      color: 0,
+      ...defaultStyle(type),
       ports: { left: 1, right: 1 },
     };
     state.nodes.push(node);
@@ -517,17 +626,20 @@
     drag.target = target;
     let p2;
     let d2;
+    let boxB;
     if (target) {
       target.el.classList.add('target');
       const n = findNode(target.port.node);
       const p = portWorld(n, target.port.side, target.port.index);
       d2 = sideDir(target.port.side);
       p2 = { x: p.x + d2 * PORT_GAP, y: p.y };
+      boxB = nodeBox(n);
     } else {
       p2 = toWorld(ev.clientX, ev.clientY);
       d2 = p2.x >= p1.x ? -1 : 1;
+      boxB = { top: p2.y, bottom: p2.y };
     }
-    draftEdge.setAttribute('d', curve(p1, d1, p2, d2));
+    draftEdge.setAttribute('d', roundedPath(orthoPoints(p1, d1, p2, d2, nodeBox(from), boxB)));
     draftEdge.setAttribute('marker-end', 'url(#arrow-selected)');
   }
 
@@ -662,8 +774,11 @@
 
   // ---------- Keyboard ----------
   document.addEventListener('keydown', (ev) => {
-    const tag = ev.target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ev.target.isContentEditable) return;
+    const t = ev.target;
+    const typing = t.tagName === 'TEXTAREA' || t.isContentEditable ||
+      (t.tagName === 'INPUT' && (t.type === 'text' || t.type === 'number'));
+    if (typing) return;
+    if (t.tagName === 'SELECT' && !(ev.ctrlKey || ev.metaKey)) return;
     const mod = ev.ctrlKey || ev.metaKey;
     if (mod && ev.key.toLowerCase() === 'z') {
       ev.preventDefault();
@@ -721,7 +836,7 @@
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) throw new Error('bad format');
       checkpoint();
-      state = { nodes: data.nodes, edges: data.edges };
+      state = { nodes: data.nodes.map(migrateNode), edges: data.edges };
       selection = null;
       render();
       fitView();
@@ -731,60 +846,102 @@
   });
 
   // ---------- Properties panel ----------
-  COLORS.forEach((c, i) => {
-    const s = document.createElement('button');
-    s.className = 'swatch';
-    s.style.background = c.fill;
-    s.style.borderColor = c.stroke;
-    s.style.boxShadow = `inset 0 0 0 2px ${c.stroke}`;
-    s.title = `색상 ${i + 1}`;
-    s.addEventListener('click', () => {
-      const node = findNode(selection.id);
-      if (!node || node.color === i) return;
-      checkpoint();
-      node.color = i;
-      render();
-      save();
-    });
-    propColors.appendChild(s);
-  });
+  const selectedNode = () => (selection && selection.kind === 'node' ? findNode(selection.id) : null);
 
-  propLabel.addEventListener('focus', () => checkpoint());
-  propLabel.addEventListener('input', () => {
-    const node = selection && findNode(selection.id);
+  // Consecutive edits of the same property (typing, dragging a slider or colour picker)
+  // collapse into a single undo step.
+  function editNode(key, fn) {
+    const node = selectedNode();
     if (!node) return;
-    node.label = propLabel.value;
-    renderNode(node);
-    save();
-  });
-
-  propType.addEventListener('change', () => {
-    const node = selection && findNode(selection.id);
-    if (!node) return;
-    checkpoint();
-    node.type = propType.value;
+    const k = `${key}:${node.id}`;
+    const now = Date.now();
+    if (lastEdit.key !== k || now - lastEdit.time > 1000) checkpoint();
+    lastEdit = { key: k, time: now };
+    fn(node);
     render();
     save();
+  }
+
+  function buildSwatches(container, colors, prop, title) {
+    for (const c of colors) {
+      const s = document.createElement('button');
+      s.className = 'swatch' + (c === TRANSPARENT ? ' transparent' : '');
+      s.dataset.color = c;
+      s.style.background = c;
+      s.title = c === TRANSPARENT ? '없음 (투명)' : c;
+      s.addEventListener('click', () => editNode(prop, (n) => { n[prop] = c; }));
+      container.appendChild(s);
+    }
+    const custom = document.createElement('label');
+    custom.className = 'swatch custom';
+    custom.title = `${title} 직접 선택`;
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.addEventListener('input', () => editNode(prop, (n) => { n[prop] = input.value; }));
+    custom.appendChild(input);
+    container.appendChild(custom);
+  }
+
+  function syncSwatches(container, value) {
+    let matched = false;
+    for (const s of container.querySelectorAll('.swatch[data-color]')) {
+      const on = s.dataset.color.toLowerCase() === String(value).toLowerCase();
+      s.classList.toggle('active', on);
+      matched = matched || on;
+    }
+    const custom = container.querySelector('.swatch.custom');
+    custom.classList.toggle('active', !matched);
+    if (!matched) custom.style.background = value;
+    else custom.style.background = '';
+    const input = custom.querySelector('input');
+    if (value !== TRANSPARENT && document.activeElement !== input) input.value = value;
+  }
+
+  buildSwatches(propTextColor, TEXT_COLORS, 'textColor', '글자색');
+  buildSwatches(propFill, FILL_COLORS, 'fill', '채우기 색');
+  buildSwatches(propStroke, STROKE_COLORS, 'stroke', '외곽선 색');
+
+  propLabel.addEventListener('input', () => editNode('label', (n) => { n.label = propLabel.value; }));
+
+  propType.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-type]');
+    if (btn) editNode('type', (n) => { n.type = btn.dataset.type; });
   });
 
+  propWeight.addEventListener('change', () => editNode('fontWeight', (n) => { n.fontWeight = Number(propWeight.value); }));
+
+  const setFontSize = (v) => {
+    if (!Number.isFinite(v)) return;
+    editNode('fontSize', (n) => { n.fontSize = clamp(Math.round(v), 8, 120); });
+  };
+  propSize.addEventListener('input', () => { if (propSize.value !== '') setFontSize(Number(propSize.value)); });
+  propSize.addEventListener('blur', () => renderPanel());
+
+  propStrokeWidth.addEventListener('input', () =>
+    editNode('strokeWidth', (n) => { n.strokeWidth = Number(propStrokeWidth.value); }));
+
   panel.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('[data-port]');
-    if (!btn) return;
-    const node = selection && findNode(selection.id);
-    if (node) setPortCount(node, btn.dataset.port, node.ports[btn.dataset.port] + Number(btn.dataset.d));
+    const node = selectedNode();
+    if (!node) return;
+    const portBtn = ev.target.closest('[data-port]');
+    if (portBtn) setPortCount(node, portBtn.dataset.port, node.ports[portBtn.dataset.port] + Number(portBtn.dataset.d));
+    const sizeBtn = ev.target.closest('[data-size]');
+    if (sizeBtn) setFontSize(node.fontSize + Number(sizeBtn.dataset.size));
   });
 
   window.addEventListener('resize', applyView);
 
   // ---------- Boot ----------
   function seed() {
-    const mk = (type, x, y, label, color, ports) => ({
-      id: uid(), type, x, y, ...DEFAULT_SIZE[type], label, color, ports: ports || { left: 1, right: 1 },
+    const mk = (type, x, y, label, style, ports) => ({
+      id: uid(), type, x, y, ...DEFAULT_SIZE[type], label,
+      ...defaultStyle(type), ...style, ports: ports || { left: 1, right: 1 },
     });
-    const center = mk('rect', -80, -40, '중심 주제', 1, { left: 1, right: 2 });
-    const a = mk('ellipse', 200, -140, '아이디어 A', 4);
-    const b = mk('diamond', 200, 40, '결정 B', 2);
-    const note = mk('text', -80, -150, '더블클릭해서 이름을 바꿔보세요', 0);
+    const center = mk('rect', -80, -40, '중심 주제',
+      { fill: '#fff1ee', stroke: '#ff6d5a', strokeWidth: 2, fontSize: 17, fontWeight: 700 }, { left: 1, right: 2 });
+    const a = mk('ellipse', 200, -150, '아이디어 A', { fill: '#e8f1ff', stroke: '#3b7ddd' });
+    const b = mk('diamond', 200, 50, '결정 B', { fill: '#fff6db', stroke: '#f0a500' });
+    const note = mk('text', -100, -150, '더블클릭해서 이름을 바꿔보세요', { w: 200, fontSize: 16, fontWeight: 500, textColor: '#4b5563' });
     state.nodes = [note, center, a, b];
     state.edges = [
       { id: uid(), from: { node: center.id, side: 'right', index: 0 }, to: { node: a.id, side: 'left', index: 0 } },

@@ -38,11 +38,11 @@
     <div id="world">
       <svg id="edges" width="1" height="1">
         <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" class="arrow-head" />
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
+            <path d="M0,1 L10,5 L0,9 z" class="arrow-head" />
           </marker>
-          <marker id="arrow-selected" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" class="arrow-head selected" />
+          <marker id="arrow-selected" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
+            <path d="M0,1 L10,5 L0,9 z" class="arrow-head selected" />
           </marker>
         </defs>
         <g id="edge-layer"></g>
@@ -56,31 +56,70 @@
   </main>
 
   <aside id="panel" hidden>
-    <h3>속성</h3>
-    <label>이름
+    <section>
+      <h4>이름</h4>
       <textarea id="prop-label" rows="2"></textarea>
-    </label>
-    <label>모양
-      <select id="prop-type">
-        <option value="rect">사각형</option>
-        <option value="ellipse">원</option>
-        <option value="diamond">마름모</option>
-        <option value="text">텍스트</option>
-      </select>
-    </label>
-    <label>색상
-      <div id="prop-colors" class="swatches"></div>
-    </label>
-    <div class="ports-row">
-      <div>
-        <span>왼쪽 포트</span>
-        <div class="stepper"><button data-port="left" data-d="-1">−</button><b id="prop-left">1</b><button data-port="left" data-d="1">+</button></div>
+    </section>
+
+    <section>
+      <h4>모양</h4>
+      <div id="prop-type" class="segmented">
+        <button data-type="rect" title="사각형"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="5" width="15" height="10" rx="2.5"/></svg></button>
+        <button data-type="ellipse" title="원"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="10" cy="10" rx="7.5" ry="6"/></svg></button>
+        <button data-type="diamond" title="마름모"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 17.5 10 10 17.5 2.5 10z" stroke-linejoin="round"/></svg></button>
+        <button data-type="text" title="텍스트"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 5h10M10 5v11" stroke-linecap="round"/></svg></button>
       </div>
-      <div>
-        <span>오른쪽 포트</span>
-        <div class="stepper"><button data-port="right" data-d="-1">−</button><b id="prop-right">1</b><button data-port="right" data-d="1">+</button></div>
+    </section>
+
+    <section>
+      <h4>글자</h4>
+      <div class="row">
+        <select id="prop-weight" title="글자 굵기">
+          <option value="100">Thin 100</option>
+          <option value="200">ExtraLight 200</option>
+          <option value="300">Light 300</option>
+          <option value="400">Regular 400</option>
+          <option value="500">Medium 500</option>
+          <option value="600">SemiBold 600</option>
+          <option value="700">Bold 700</option>
+          <option value="800">ExtraBold 800</option>
+          <option value="900">Black 900</option>
+        </select>
+        <div class="stepper size" title="글자 크기">
+          <button data-size="-1">−</button>
+          <input id="prop-size" type="number" min="8" max="120" step="1" />
+          <button data-size="1">+</button>
+        </div>
       </div>
-    </div>
+      <div class="sub">글자색</div>
+      <div id="prop-text-color" class="swatches"></div>
+    </section>
+
+    <section>
+      <h4>채우기</h4>
+      <div id="prop-fill" class="swatches"></div>
+    </section>
+
+    <section>
+      <h4>외곽선</h4>
+      <div id="prop-stroke" class="swatches"></div>
+      <div class="sub">굵기 <b id="prop-stroke-width-label">1.5px</b></div>
+      <input id="prop-stroke-width" type="range" min="0" max="12" step="0.5" />
+    </section>
+
+    <section>
+      <h4>화살표 포트</h4>
+      <div class="ports-row">
+        <div>
+          <span>왼쪽</span>
+          <div class="stepper"><button data-port="left" data-d="-1">−</button><b id="prop-left">1</b><button data-port="left" data-d="1">+</button></div>
+        </div>
+        <div>
+          <span>오른쪽</span>
+          <div class="stepper"><button data-port="right" data-d="-1">−</button><b id="prop-right">1</b><button data-port="right" data-d="1">+</button></div>
+        </div>
+      </div>
+    </section>
   </aside>
 
   <script src="app.js"></script>
