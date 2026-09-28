@@ -1,0 +1,18 @@
+name = "sales-dashboard"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# 광고비 입력값·아임웹 토큰·매출 캐시 저장소
+# `npx wrangler kv namespace create KV` 실행 후 출력된 id로 바꿔주세요.
+[[kv_namespaces]]
+binding = "KV"
+id = "REPLACE_WITH_KV_ID"
+
+[vars]
+# 매출 전체에 적용하는 수수료율 (2.25%)
+FEE_RATE = "0.0225"
+
+# 비밀값은 여기 적지 말고 아래 명령으로 등록합니다.
+#   npx wrangler secret put IMWEB_API_KEY
+#   npx wrangler secret put IMWEB_SECRET_KEY
+#   npx wrangler secret put DASHBOARD_PASSWORD
