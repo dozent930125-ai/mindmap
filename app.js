@@ -509,6 +509,50 @@
     render();
   }
 
+  // ---------- Clipboard ----------
+  const CLIPBOARD_KEY = 'mindmap-clipboard-v1';
+  const PASTE_OFFSET = 30;
+  let clipboard = null; // { nodes, edges, pastes }
+
+  function copySelection() {
+    const nodes = selectedNodes();
+    if (!nodes.length) return false;
+    const ids = new Set(nodes.map((n) => n.id));
+    clipboard = {
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(state.edges.filter((e) => ids.has(e.from.node) && ids.has(e.to.node)))),
+      pastes: 0,
+    };
+    try { localStorage.setItem(CLIPBOARD_KEY, JSON.stringify(clipboard)); } catch (_) { /* in-memory only */ }
+    return true;
+  }
+
+  function paste() {
+    if (!clipboard) {
+      try { clipboard = JSON.parse(localStorage.getItem(CLIPBOARD_KEY)); } catch (_) { clipboard = null; }
+    }
+    if (!clipboard || !clipboard.nodes.length) return;
+    checkpoint();
+    clipboard.pastes += 1;
+    const offset = PASTE_OFFSET * clipboard.pastes;
+    const idMap = new Map();
+    const nodes = clipboard.nodes.map((n) => {
+      const id = uid();
+      idMap.set(n.id, id);
+      return { ...JSON.parse(JSON.stringify(n)), id, x: n.x + offset, y: n.y + offset };
+    });
+    const edges = clipboard.edges.map((e) => ({
+      id: uid(),
+      from: { ...e.from, node: idMap.get(e.from.node) },
+      to: { ...e.to, node: idMap.get(e.to.node) },
+    }));
+    state.nodes.push(...nodes);
+    state.edges.push(...edges);
+    try { localStorage.setItem(CLIPBOARD_KEY, JSON.stringify(clipboard)); } catch (_) { /* ignore */ }
+    select(selectNodes(nodes.map((n) => n.id)));
+    save();
+  }
+
   function connect(from, to) {
     if (from.node === to.node && from.side === to.side && from.index === to.index) return;
     const same = (a, b) => a.node === b.node && a.side === b.side && a.index === b.index;
@@ -846,6 +890,19 @@
     } else if (ev.key === 'Delete' || ev.key === 'Backspace') {
       ev.preventDefault();
       deleteSelection();
+    } else if (mod && ev.key.toLowerCase() === 'c') {
+      if (copySelection()) ev.preventDefault();
+    } else if (mod && ev.key.toLowerCase() === 'x') {
+      if (copySelection()) {
+        ev.preventDefault();
+        deleteSelection();
+      }
+    } else if (mod && ev.key.toLowerCase() === 'v') {
+      ev.preventDefault();
+      paste();
+    } else if (mod && ev.key.toLowerCase() === 'd') {
+      ev.preventDefault();
+      if (copySelection()) paste();
     } else if (mod && ev.key.toLowerCase() === 'a') {
       ev.preventDefault();
       select(selectNodes(state.nodes.map((n) => n.id)));
