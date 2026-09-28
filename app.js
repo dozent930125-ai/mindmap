@@ -666,15 +666,15 @@
     const nodeEl = t.closest('.node');
     const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
 
-    if (ev.button !== 0 || spaceDown || (!nodeEl && !t.classList.contains('edge-hit') && ev.pointerType === 'touch')) {
-      // Pan: middle/right button, Space + drag, or one finger on empty canvas.
-      drag = { kind: 'pan', ...start, vx: view.x, vy: view.y };
-      viewport.classList.add('panning');
-    } else if (!nodeEl && !t.classList.contains('edge-hit')) {
-      // Rubber-band selection on empty canvas.
+    const onEmpty = !nodeEl && !t.classList.contains('edge-hit');
+    if (ev.button === 2) {
+      // Right-button drag: rubber-band selection (a right-click on a node selects it).
       const base = additive ? [...selectedIds()] : [];
-      if (!additive && selection) select(null);
-      drag = { kind: 'marquee', ...start, base, moved: false };
+      drag = { kind: 'marquee', ...start, base, moved: false, clickId: nodeEl ? nodeEl.dataset.id : null };
+    } else if (ev.button === 1 || spaceDown || onEmpty) {
+      // Pan: left drag on empty canvas, middle button, or Space + drag. A plain click clears the selection.
+      drag = { kind: 'pan', ...start, vx: view.x, vy: view.y, clickClear: ev.button === 0 && !additive };
+      viewport.classList.add('panning');
     } else if (t.classList.contains('edge-hit')) {
       select({ kind: 'edge', id: t.dataset.id });
       return;
@@ -739,6 +739,7 @@
     const dy = (ev.clientY - drag.cy) / view.k;
 
     if (drag.kind === 'pan') {
+      if (!drag.moved && Math.hypot(ev.clientX - drag.cx, ev.clientY - drag.cy) >= 3) drag.moved = true;
       view.x = drag.vx + (ev.clientX - drag.cx);
       view.y = drag.vy + (ev.clientY - drag.cy);
       applyView();
@@ -758,6 +759,7 @@
     } else if (drag.kind === 'marquee') {
       if (!drag.moved && Math.hypot(ev.clientX - drag.cx, ev.clientY - drag.cy) < 3) return;
       drag.moved = true;
+      if (!drag.base.length && selection) selection = null;
       const r = viewport.getBoundingClientRect();
       const x0 = Math.min(drag.cx, ev.clientX), x1 = Math.max(drag.cx, ev.clientX);
       const y0 = Math.min(drag.cy, ev.clientY), y1 = Math.max(drag.cy, ev.clientY);
@@ -795,14 +797,16 @@
       }
     } else if (drag.kind === 'pan') {
       viewport.classList.remove('panning');
+      if (!drag.moved && drag.clickClear && selection) select(null);
     } else if (drag.kind === 'marquee') {
       marquee.style.display = 'none';
-      if (selection) select(selection); // bring selected to front
+      if (!drag.moved && drag.clickId) select(selectNodes([...new Set([...drag.base, drag.clickId])]));
+      else if (selection) select(selection); // bring selected to front
     } else if (drag.kind === 'move' && !drag.moved && drag.collapse) {
       // Plain click on one node of a group selects just that node.
       select(selectNodes([drag.id]));
     }
-    if ((drag.moved && drag.kind !== 'marquee') || drag.kind === 'pan') save();
+    if (drag.moved && drag.kind !== 'marquee') save();
     drag = null;
   }
 
@@ -1367,25 +1371,221 @@
     if (hadSaved && view.k) applyView(); else fitView();
   }
 
-  // Read-only bridge for the Claude chat panel (chat.js).
+  // ---------- Bridge for the Claude chat panel (chat.js) ----------
+  const TYPE_NAMES = { rect: '사각형', ellipse: '원', diamond: '마름모', text: '텍스트' };
+  const COLOR_RE = /^#[0-9a-f]{3}([0-9a-f]{3})?$/i;
+  const num = (v, lo, hi) => (Number.isFinite(Number(v)) ? clamp(Math.round(Number(v)), lo, hi) : undefined);
+
+  // Style / geometry fields Claude may set, validated.
+  function cleanPatch(src) {
+    const out = {};
+    if (typeof src.label === 'string') out.label = src.label.slice(0, 500);
+    if (src.type in DEFAULT_SIZE) out.type = src.type;
+    for (const k of ['x', 'y']) { const v = num(src[k], -100000, 100000); if (v !== undefined) out[k] = v; }
+    const w = num(src.w ?? src.width, 60, 2000); if (w !== undefined) out.w = w;
+    const h = num(src.h ?? src.height, 32, 2000); if (h !== undefined) out.h = h;
+    if (src.fill === TRANSPARENT || COLOR_RE.test(src.fill || '')) out.fill = src.fill;
+    for (const k of ['stroke', 'textColor']) if (COLOR_RE.test(src[k] || '')) out[k] = src[k];
+    const sw = Number(src.strokeWidth); if (Number.isFinite(sw)) out.strokeWidth = clamp(Math.round(sw * 2) / 2, 0, 12);
+    const fs = num(src.fontSize, 8, 120); if (fs !== undefined) out.fontSize = fs;
+    const fw = num(src.fontWeight, 100, 900); if (fw !== undefined) out.fontWeight = Math.round(fw / 100) * 100;
+    return out;
+  }
+
+  function mapJson() {
+    return {
+      nodes: state.nodes.map((n) => ({
+        id: n.id, type: n.type, label: n.label, x: n.x, y: n.y, w: n.w, h: n.h,
+        fill: n.fill, stroke: n.stroke, strokeWidth: n.strokeWidth, textColor: n.textColor,
+        fontSize: n.fontSize, fontWeight: n.fontWeight, ports: n.ports,
+      })),
+      edges: state.edges.map((e) => ({ id: e.id, from: e.from.node, to: e.to.node, fromSide: e.from.side, toSide: e.to.side })),
+      selected: selectedIds(),
+    };
+  }
+
+  // Pick the least-used port on a side, creating one if the side has none.
+  function pickPort(node, side) {
+    if (!node.ports[side]) node.ports[side] = 1;
+    const use = new Array(node.ports[side]).fill(0);
+    for (const e of state.edges) {
+      for (const end of [e.from, e.to]) if (end.node === node.id && end.side === side && end.index < use.length) use[end.index]++;
+    }
+    return use.indexOf(Math.min(...use));
+  }
+
+  // Left-to-right layered layout following the arrows.
+  function autoLayout({ gapX = 90, gapY = 40, ids } = {}) {
+    const nodes = ids && ids.length ? ids.map(findNode).filter(Boolean) : state.nodes.slice();
+    if (!nodes.length) return 0;
+    const set = new Set(nodes.map((n) => n.id));
+    const out = new Map(nodes.map((n) => [n.id, []]));
+    const indeg = new Map(nodes.map((n) => [n.id, 0]));
+    for (const e of state.edges) {
+      if (set.has(e.from.node) && set.has(e.to.node) && e.from.node !== e.to.node) {
+        out.get(e.from.node).push(e.to.node);
+        indeg.set(e.to.node, indeg.get(e.to.node) + 1);
+      }
+    }
+    // Depth = longest path from a root (cycles are broken by visiting each node once per pass).
+    const depth = new Map(nodes.map((n) => [n.id, 0]));
+    for (let pass = 0; pass < nodes.length; pass++) {
+      let changed = false;
+      for (const [from, tos] of out) for (const to of tos) {
+        if (depth.get(to) < depth.get(from) + 1 && depth.get(from) + 1 < nodes.length) { depth.set(to, depth.get(from) + 1); changed = true; }
+      }
+      if (!changed) break;
+    }
+    const minX = Math.min(...nodes.map((n) => n.x));
+    const minY = Math.min(...nodes.map((n) => n.y));
+    const cols = [];
+    for (const n of nodes) (cols[depth.get(n.id)] ||= []).push(n);
+    // Order each column by the average position of its parents, then by current y.
+    const order = new Map();
+    let x = minX;
+    const heights = [];
+    cols.forEach((col = [], d) => {
+      // Nodes with placed parents follow them; the rest keep their current top-to-bottom order.
+      const key = (n) => parentsAvg(n.id) ?? 1e6 + n.y;
+      col.sort((a, b) => key(a) - key(b) || a.y - b.y);
+      col.forEach((n, i) => order.set(n.id, i));
+      heights[d] = col.reduce((s, n) => s + n.h, 0) + gapY * Math.max(0, col.length - 1);
+    });
+    function parentsAvg(id) {
+      const ps = state.edges.filter((e) => e.to.node === id && order.has(e.from.node)).map((e) => order.get(e.from.node));
+      return ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : null;
+    }
+    const tallest = Math.max(...heights.filter((h) => h !== undefined));
+    cols.forEach((col = [], d) => {
+      if (!col.length) return;
+      let y = minY + (tallest - heights[d]) / 2;
+      const colW = Math.max(...col.map((n) => n.w));
+      for (const n of col) {
+        n.x = Math.round(x + (colW - n.w) / 2);
+        n.y = Math.round(y);
+        y += n.h + gapY;
+      }
+      x += colW + gapX;
+    });
+    return nodes.length;
+  }
+
+  function aiSession() {
+    let started = false;
+    let depth = -1;
+    const begin = () => {
+      if (!editable()) throw new Error('보기 전용이라 마인드맵을 수정할 수 없습니다.');
+      if (!started) { checkpoint(); started = true; depth = undoStack.length; }
+    };
+    const commit = () => { restoreSelection(); render(); save(); };
+    return {
+      get changed() { return started; },
+      // Undo this session's changes, only if nothing else was done after them.
+      undo() {
+        if (started && undoStack.length === depth) { undo(); return true; }
+        return false;
+      },
+      getMap: () => mapJson(),
+      addNodes(list) {
+        begin();
+        const created = [];
+        for (const src of list || []) {
+          const p = cleanPatch(src || {});
+          const type = p.type || 'rect';
+          const node = {
+            id: uid(), type, x: 0, y: 0, ...DEFAULT_SIZE[type], label: DEFAULT_LABEL[type], ...defaultStyle(type),
+            ports: { left: 1, right: 1 }, ...p,
+          };
+          state.nodes.push(node);
+          created.push({ ref: src && src.ref, id: node.id, label: node.label });
+        }
+        commit();
+        return created;
+      },
+      updateNodes(list) {
+        begin();
+        const done = [];
+        for (const src of list || []) {
+          const node = src && findNode(String(src.id));
+          if (!node) continue;
+          Object.assign(node, cleanPatch(src));
+          if (src.ports) {
+            for (const side of ['left', 'right']) {
+              const c = num(src.ports[side], 0, MAX_PORTS);
+              if (c !== undefined) setPortCount(node, side, c, false);
+            }
+          }
+          done.push(node.id);
+        }
+        commit();
+        return done;
+      },
+      deleteNodes(ids) {
+        begin();
+        const set = new Set((ids || []).map(String));
+        const before = state.nodes.length;
+        state.nodes = state.nodes.filter((n) => !set.has(n.id));
+        state.edges = state.edges.filter((e) => !set.has(e.from.node) && !set.has(e.to.node));
+        commit();
+        return before - state.nodes.length;
+      },
+      addEdges(list) {
+        begin();
+        const created = [];
+        for (const src of list || []) {
+          const a = src && findNode(String(src.from));
+          const b = src && findNode(String(src.to));
+          if (!a || !b || a === b) continue;
+          const fromSide = src.fromSide === 'left' ? 'left' : 'right';
+          const toSide = src.toSide === 'right' ? 'right' : 'left';
+          const dup = state.edges.some((e) => e.from.node === a.id && e.to.node === b.id);
+          if (dup) continue;
+          const edge = {
+            id: uid(),
+            from: { node: a.id, side: fromSide, index: pickPort(a, fromSide) },
+            to: { node: b.id, side: toSide, index: pickPort(b, toSide) },
+          };
+          state.edges.push(edge);
+          created.push(edge.id);
+        }
+        commit();
+        return created;
+      },
+      deleteEdges(list) {
+        begin();
+        const before = state.edges.length;
+        for (const src of list || []) {
+          if (typeof src === 'string') state.edges = state.edges.filter((e) => e.id !== src);
+          else if (src) state.edges = state.edges.filter((e) => !(e.from.node === String(src.from) && e.to.node === String(src.to)));
+        }
+        commit();
+        return before - state.edges.length;
+      },
+      autoLayout(opts) {
+        begin();
+        const n = autoLayout({
+          gapX: num(opts && opts.gapX, 10, 1000) ?? 90,
+          gapY: num(opts && opts.gapY, 0, 1000) ?? 40,
+          ids: opts && Array.isArray(opts.ids) ? opts.ids.map(String) : null,
+        });
+        commit();
+        return n;
+      },
+      fitView: () => { fitView(); return true; },
+    };
+  }
+
   window.MindmapBridge = {
     describe() {
-      const byId = new Map(state.nodes.map((n, i) => [n.id, i + 1]));
+      return JSON.stringify(mapJson());
+    },
+    summary() {
       const name = (n) => (n.label || '').replace(/\s+/g, ' ').trim() || '(이름 없음)';
-      const kind = { rect: '사각형', ellipse: '원', diamond: '마름모', text: '텍스트' };
-      const lines = [`도형 ${state.nodes.length}개, 연결 ${state.edges.length}개`, '', '도형:'];
-      for (const n of state.nodes) lines.push(`- #${byId.get(n.id)} "${name(n)}" (${kind[n.type] || n.type})`);
-      lines.push('', '연결 (A → B):');
-      for (const e of state.edges) {
-        const a = findNode(e.from.node);
-        const b = findNode(e.to.node);
-        if (a && b) lines.push(`- #${byId.get(a.id)} "${name(a)}" → #${byId.get(b.id)} "${name(b)}"`);
-      }
-      const sel = selectedNodes();
-      if (sel.length) lines.push('', `사용자가 지금 선택한 도형: ${sel.map((n) => `#${byId.get(n.id)} "${name(n)}"`).join(', ')}`);
-      return lines.join('\n');
+      return state.nodes.map((n) => `${name(n)}(${TYPE_NAMES[n.type]})`).join(', ');
     },
     counts: () => ({ nodes: state.nodes.length, edges: state.edges.length, selected: selectedIds().length }),
+    canEdit: () => editable(),
+    session: aiSession,
   };
 
   (async () => {

@@ -62,7 +62,7 @@
     <div id="loading-note" class="loading-note">마인드맵을 불러오는 중…</div>
     <div id="toast" class="toast" role="status" hidden></div>
     <div class="hint">
-      빈 곳 드래그: 범위 선택 · Space/우클릭 드래그: 화면 이동 · 휠: 확대/축소 · Shift+클릭: 선택 추가 · 더블클릭: 이름 변경
+      왼쪽 드래그: 화면 이동 · 오른쪽 드래그: 여러 도형 선택 · 휠: 확대/축소 · Shift+클릭: 선택 추가 · 더블클릭: 이름 변경
     </div>
   </main>
 
@@ -140,12 +140,17 @@
   <aside id="chat" aria-label="Claude 채팅" hidden>
     <header class="chat-head">
       <div class="chat-title">Claude</div>
-      <div id="chat-mode" class="segmented chat-mode" role="tablist">
-        <button data-mode="free" role="tab">그냥 대화</button>
-        <button data-mode="map" role="tab">마인드맵 보며 대화</button>
-      </div>
+      <select id="chat-model" title="모델 선택">
+        <option value="quick">빠른 모델</option>
+        <option value="default">기본 모델</option>
+        <option value="complex">최고 성능 모델</option>
+      </select>
       <button id="chat-close" class="icon" title="닫기">✕</button>
     </header>
+    <div id="chat-mode" class="segmented chat-mode" role="tablist">
+      <button data-mode="free" role="tab">그냥 대화</button>
+      <button data-mode="map" role="tab">마인드맵 함께 편집</button>
+    </div>
     <div id="chat-log" class="chat-log" aria-live="polite"></div>
     <div id="chat-context" class="chat-context"></div>
     <form id="chat-form" class="chat-form">

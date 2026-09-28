@@ -420,8 +420,13 @@ body.chat-open #panel { right: calc(var(--chat-w) + 12px); }
 
 .chat-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .chat-title { font-weight: 700; font-size: 15px; }
-.chat-mode { flex: 1; }
-.chat-mode button { font-size: 12px; padding: 5px 6px; }
+.chat-head .chat-title { flex: 1; }
+#chat-model {
+  font-size: 12px; color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: 8px; padding: 5px 6px; background: #fff;
+}
+.chat-mode { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.chat-mode button { font-size: 12px; padding: 6px 6px; }
 
 .chat-log {
   flex: 1; overflow-y: auto;
@@ -524,3 +529,12 @@ body.chat-open #panel { right: calc(var(--chat-w) + 12px); }
   .group { border-right: none; padding-right: 0; }
   .toolbar button { padding: 6px; }
 }
+
+/* Claude's edits to the map, listed above its reply */
+.msg .acts:empty { display: none; }
+.msg .acts { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px dashed #d8dce3; }
+.msg .act { font-size: 12px; color: #1f7a45; font-weight: 600; }
+.msg .body:empty { display: none; }
+.msg .acts:not(:empty) + .body:empty { display: none; }
+.chat-note.undo { display: flex; gap: 8px; align-items: center; color: var(--text); }
+button.link { border: none; padding: 0; background: none; color: var(--accent); font-weight: 600; text-decoration: underline; }
