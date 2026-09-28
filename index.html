@@ -50,13 +50,15 @@
       </svg>
       <div id="node-layer"></div>
     </div>
+    <div id="marquee"></div>
     <div class="hint">
-      빈 곳 드래그: 이동 · 휠: 확대/축소 · 더블클릭: 이름 변경 · 점(●) 드래그: 화살표 연결 · 선택 후 +/−: 화살표 포트 개수 조절
+      빈 곳 드래그: 범위 선택 · Space/우클릭 드래그: 화면 이동 · 휠: 확대/축소 · Shift+클릭: 선택 추가 · 더블클릭: 이름 변경
     </div>
   </main>
 
   <aside id="panel" hidden>
-    <section>
+    <div id="panel-title" class="panel-title" hidden></div>
+    <section id="label-section">
       <h4>이름</h4>
       <textarea id="prop-label" rows="2"></textarea>
     </section>

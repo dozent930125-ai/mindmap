@@ -68,12 +68,16 @@
   const btnUndo = $('#btn-undo');
   const btnRedo = $('#btn-redo');
   const btnDelete = $('#btn-delete');
+  const marquee = $('#marquee');
+  const panelTitle = $('#panel-title');
+  const labelSection = $('#label-section');
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
   // ---------- State ----------
   let state = { nodes: [], edges: [] };
   let view = { x: 0, y: 0, k: 1 };
-  let selection = null; // { kind: 'node' | 'edge', id }
+  let selection = null; // { kind: 'node', ids: [...] } | { kind: 'edge', id }
+  let spaceDown = false;
   let editingId = null;
   let drag = null;
   const undoStack = [];
@@ -86,6 +90,10 @@
   const snapshot = () => JSON.stringify(state);
   const findNode = (id) => state.nodes.find((n) => n.id === id);
   const findEdge = (id) => state.edges.find((e) => e.id === id);
+  const selectedIds = () => (selection && selection.kind === 'node' ? selection.ids : []);
+  const isSelected = (id) => selectedIds().includes(id);
+  const selectedNodes = () => selectedIds().map(findNode).filter(Boolean);
+  const selectNodes = (ids) => (ids.length ? { kind: 'node', ids } : null);
 
   // ---------- History & persistence ----------
   function checkpoint() {
@@ -98,7 +106,9 @@
 
   function restore(json) {
     state = JSON.parse(json);
-    if (selection && !(selection.kind === 'node' ? findNode(selection.id) : findEdge(selection.id))) {
+    if (selection && selection.kind === 'node') {
+      selection = selectNodes(selection.ids.filter(findNode));
+    } else if (selection && !findEdge(selection.id)) {
       selection = null;
     }
     render();
@@ -350,7 +360,8 @@
       nodeLayer.appendChild(el);
     }
     el.className = `node ${node.type}` +
-      (selection && selection.kind === 'node' && selection.id === node.id ? ' selected' : '') +
+      (isSelected(node.id) ? ' selected' : '') +
+      (isSelected(node.id) && selectedIds().length === 1 ? ' single' : '') +
       (node.fill === TRANSPARENT ? ' no-fill' : '') +
       (!node.strokeWidth ? ' no-stroke' : '');
     el.style.left = `${node.x}px`;
@@ -404,10 +415,14 @@
   }
 
   function renderPanel() {
-    const node = selection && selection.kind === 'node' ? findNode(selection.id) : null;
+    const nodes = selectedNodes();
+    const node = nodes[0];
     panel.hidden = !node;
     btnDelete.disabled = !selection;
     if (!node) return;
+    panelTitle.textContent = nodes.length > 1 ? `${nodes.length}개 선택됨` : '';
+    panelTitle.hidden = nodes.length < 2;
+    labelSection.hidden = nodes.length > 1;
     if (document.activeElement !== propLabel) propLabel.value = node.label;
     [...propType.children].forEach((b) => b.classList.toggle('active', b.dataset.type === node.type));
     propWeight.value = String(node.fontWeight);
@@ -450,16 +465,16 @@
       ports: { left: 1, right: 1 },
     };
     state.nodes.push(node);
-    selection = { kind: 'node', id: node.id };
+    selection = selectNodes([node.id]);
     render();
     save();
     return node;
   }
 
-  function setPortCount(node, side, count) {
+  function setPortCount(node, side, count, record = true) {
     count = clamp(count, 0, MAX_PORTS);
     if (count === node.ports[side]) return;
-    checkpoint();
+    if (record) checkpoint();
     node.ports[side] = count;
     // Drop edges attached to ports that no longer exist.
     state.edges = state.edges.filter((e) =>
@@ -473,9 +488,9 @@
     if (!selection) return;
     checkpoint();
     if (selection.kind === 'node') {
-      const id = selection.id;
-      state.nodes = state.nodes.filter((n) => n.id !== id);
-      state.edges = state.edges.filter((e) => e.from.node !== id && e.to.node !== id);
+      const ids = new Set(selection.ids);
+      state.nodes = state.nodes.filter((n) => !ids.has(n.id));
+      state.edges = state.edges.filter((e) => !ids.has(e.from.node) && !ids.has(e.to.node));
     } else {
       state.edges = state.edges.filter((e) => e.id !== selection.id);
     }
@@ -487,9 +502,9 @@
   function select(sel) {
     selection = sel;
     if (sel && sel.kind === 'node') {
-      // Bring selected node to front.
-      const i = state.nodes.findIndex((n) => n.id === sel.id);
-      if (i >= 0 && i !== state.nodes.length - 1) state.nodes.push(state.nodes.splice(i, 1)[0]);
+      // Bring selected nodes to front, keeping their relative order.
+      const ids = new Set(sel.ids);
+      state.nodes = [...state.nodes.filter((n) => !ids.has(n.id)), ...state.nodes.filter((n) => ids.has(n.id))];
     }
     render();
   }
@@ -581,8 +596,10 @@
     return null;
   }
 
+  viewport.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
   viewport.addEventListener('pointerdown', (ev) => {
-    if (ev.button !== 0 && ev.button !== 1) return;
+    if (ev.button > 2) return;
     const t = ev.target;
 
     if (t.closest('.port-ctrl')) return; // handled by click
@@ -593,12 +610,17 @@
 
     const start = { cx: ev.clientX, cy: ev.clientY };
     const nodeEl = t.closest('.node');
+    const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
 
-    if (ev.button === 1 || !nodeEl && !t.classList.contains('edge-hit')) {
-      // Pan (middle button anywhere, or left button on empty canvas).
-      if (ev.button === 0 && selection) select(null);
+    if (ev.button !== 0 || spaceDown || (!nodeEl && !t.classList.contains('edge-hit') && ev.pointerType === 'touch')) {
+      // Pan: middle/right button, Space + drag, or one finger on empty canvas.
       drag = { kind: 'pan', ...start, vx: view.x, vy: view.y };
       viewport.classList.add('panning');
+    } else if (!nodeEl && !t.classList.contains('edge-hit')) {
+      // Rubber-band selection on empty canvas.
+      const base = additive ? [...selectedIds()] : [];
+      if (!additive && selection) select(null);
+      drag = { kind: 'marquee', ...start, base, moved: false };
     } else if (t.classList.contains('edge-hit')) {
       select({ kind: 'edge', id: t.dataset.id });
       return;
@@ -610,9 +632,19 @@
       const node = findNode(nodeEl.dataset.id);
       drag = { kind: 'resize', ...start, id: node.id, w: node.w, h: node.h, moved: false };
     } else {
-      const node = findNode(nodeEl.dataset.id);
-      select({ kind: 'node', id: node.id });
-      drag = { kind: 'move', ...start, id: node.id, x: node.x, y: node.y, moved: false };
+      const id = nodeEl.dataset.id;
+      if (additive) {
+        // Shift/Ctrl-click toggles the node in the selection.
+        const ids = isSelected(id) ? selectedIds().filter((x) => x !== id) : [...selectedIds(), id];
+        select(selectNodes(ids));
+        if (!isSelected(id)) { ev.preventDefault(); return; }
+      } else if (!isSelected(id)) {
+        select(selectNodes([id]));
+      } else {
+        select(selection); // bring to front
+      }
+      const origin = selectedNodes().map((n) => ({ id: n.id, x: n.x, y: n.y }));
+      drag = { kind: 'move', ...start, id, origin, collapse: !additive && selectedIds().length > 1, moved: false };
     }
     ev.preventDefault();
   });
@@ -653,16 +685,35 @@
       view.y = drag.vy + (ev.clientY - drag.cy);
       applyView();
     } else if (drag.kind === 'move') {
-      const node = findNode(drag.id);
       if (!drag.moved) {
         if (Math.hypot(dx, dy) * view.k < 3) return;
         checkpoint();
         drag.moved = true;
       }
-      node.x = Math.round(drag.x + dx);
-      node.y = Math.round(drag.y + dy);
-      renderNode(node);
+      for (const o of drag.origin) {
+        const node = findNode(o.id);
+        node.x = Math.round(o.x + dx);
+        node.y = Math.round(o.y + dy);
+        renderNode(node);
+      }
       renderEdges();
+    } else if (drag.kind === 'marquee') {
+      if (!drag.moved && Math.hypot(ev.clientX - drag.cx, ev.clientY - drag.cy) < 3) return;
+      drag.moved = true;
+      const r = viewport.getBoundingClientRect();
+      const x0 = Math.min(drag.cx, ev.clientX), x1 = Math.max(drag.cx, ev.clientX);
+      const y0 = Math.min(drag.cy, ev.clientY), y1 = Math.max(drag.cy, ev.clientY);
+      Object.assign(marquee.style, {
+        display: 'block', left: `${x0 - r.left}px`, top: `${y0 - r.top}px`, width: `${x1 - x0}px`, height: `${y1 - y0}px`,
+      });
+      const a = toWorld(x0, y0);
+      const b = toWorld(x1, y1);
+      const hit = state.nodes
+        .filter((n) => n.x < b.x && n.x + n.w > a.x && n.y < b.y && n.y + n.h > a.y)
+        .map((n) => n.id);
+      selection = selectNodes([...new Set([...drag.base, ...hit])]);
+      renderNodes();
+      renderPanel();
     } else if (drag.kind === 'resize') {
       const node = findNode(drag.id);
       if (!drag.moved) { checkpoint(); drag.moved = true; }
@@ -686,8 +737,14 @@
       }
     } else if (drag.kind === 'pan') {
       viewport.classList.remove('panning');
+    } else if (drag.kind === 'marquee') {
+      marquee.style.display = 'none';
+      if (selection) select(selection); // bring selected to front
+    } else if (drag.kind === 'move' && !drag.moved && drag.collapse) {
+      // Plain click on one node of a group selects just that node.
+      select(selectNodes([drag.id]));
     }
-    if (drag.moved || drag.kind === 'pan') save();
+    if ((drag.moved && drag.kind !== 'marquee') || drag.kind === 'pan') save();
     drag = null;
   }
 
@@ -789,13 +846,28 @@
     } else if (ev.key === 'Delete' || ev.key === 'Backspace') {
       ev.preventDefault();
       deleteSelection();
-    } else if (ev.key === 'Enter' && selection && selection.kind === 'node') {
+    } else if (mod && ev.key.toLowerCase() === 'a') {
       ev.preventDefault();
-      startEdit(selection.id);
+      select(selectNodes(state.nodes.map((n) => n.id)));
+    } else if (ev.key === ' ') {
+      ev.preventDefault();
+      spaceDown = true;
+      viewport.classList.add('space');
+    } else if (ev.key === 'Enter' && selectedIds().length === 1) {
+      ev.preventDefault();
+      startEdit(selectedIds()[0]);
     } else if (ev.key === 'Escape') {
       select(null);
     }
   });
+
+  document.addEventListener('keyup', (ev) => {
+    if (ev.key === ' ') {
+      spaceDown = false;
+      viewport.classList.remove('space');
+    }
+  });
+  window.addEventListener('blur', () => { spaceDown = false; viewport.classList.remove('space'); });
 
   // ---------- Toolbar ----------
   document.querySelectorAll('[data-add]').forEach((b) =>
@@ -846,18 +918,16 @@
   });
 
   // ---------- Properties panel ----------
-  const selectedNode = () => (selection && selection.kind === 'node' ? findNode(selection.id) : null);
-
-  // Consecutive edits of the same property (typing, dragging a slider or colour picker)
-  // collapse into a single undo step.
+  // Applies fn to every selected node. Consecutive edits of the same property
+  // (typing, dragging a slider or colour picker) collapse into a single undo step.
   function editNode(key, fn) {
-    const node = selectedNode();
-    if (!node) return;
-    const k = `${key}:${node.id}`;
+    const nodes = selectedNodes();
+    if (!nodes.length) return;
+    const k = `${key}:${selectedIds().join(',')}`;
     const now = Date.now();
     if (lastEdit.key !== k || now - lastEdit.time > 1000) checkpoint();
     lastEdit = { key: k, time: now };
-    fn(node);
+    nodes.forEach(fn);
     render();
     save();
   }
@@ -921,12 +991,17 @@
     editNode('strokeWidth', (n) => { n.strokeWidth = Number(propStrokeWidth.value); }));
 
   panel.addEventListener('click', (ev) => {
-    const node = selectedNode();
-    if (!node) return;
+    const nodes = selectedNodes();
+    if (!nodes.length) return;
     const portBtn = ev.target.closest('[data-port]');
-    if (portBtn) setPortCount(node, portBtn.dataset.port, node.ports[portBtn.dataset.port] + Number(portBtn.dataset.d));
+    if (portBtn) {
+      const side = portBtn.dataset.port;
+      const d = Number(portBtn.dataset.d);
+      checkpoint();
+      nodes.forEach((n) => setPortCount(n, side, n.ports[side] + d, false));
+    }
     const sizeBtn = ev.target.closest('[data-size]');
-    if (sizeBtn) setFontSize(node.fontSize + Number(sizeBtn.dataset.size));
+    if (sizeBtn) setFontSize(nodes[0].fontSize + Number(sizeBtn.dataset.size));
   });
 
   window.addEventListener('resize', applyView);

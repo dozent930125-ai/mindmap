@@ -78,13 +78,24 @@ button:disabled { opacity: .4; cursor: default; color: inherit; border-color: va
   position: fixed;
   top: 56px; left: 0; right: 0; bottom: 0;
   overflow: hidden;
-  cursor: grab;
   background-color: var(--bg);
   background-image: radial-gradient(var(--grid) 1.2px, transparent 1.2px);
   touch-action: none;
   user-select: none;
 }
+
+#viewport.space { cursor: grab; }
 #viewport.panning { cursor: grabbing; }
+
+#marquee {
+  position: absolute;
+  display: none;
+  border: 1px solid var(--accent);
+  background: rgba(255, 109, 90, .08);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 5;
+}
 
 #world {
   position: absolute;
@@ -220,7 +231,7 @@ button:disabled { opacity: .4; cursor: default; color: inherit; border-color: va
   white-space: nowrap;
   box-shadow: var(--shadow-sm);
 }
-.node.selected .port-ctrl { display: flex; }
+.node.single .port-ctrl { display: flex; }
 .port-ctrl.left { left: -8px; }
 .port-ctrl.right { right: -8px; }
 .port-ctrl button { padding: 0 7px; font-size: 13px; line-height: 20px; border: none; border-radius: 6px; }
@@ -239,7 +250,7 @@ button:disabled { opacity: .4; cursor: default; color: inherit; border-color: va
   display: none;
   z-index: 3;
 }
-.node.selected .resize { display: block; }
+.node.single .resize { display: block; }
 
 /* ---------- Hint ---------- */
 .hint {
@@ -274,6 +285,8 @@ button:disabled { opacity: .4; cursor: default; color: inherit; border-color: va
   font-size: 13px;
 }
 #panel[hidden] { display: none; }
+.panel-title { padding: 12px 0 0; font-size: 13px; font-weight: 700; color: var(--accent); }
+#panel section[hidden] { display: none; }
 #panel section { padding: 12px 0; border-bottom: 1px solid var(--border); }
 #panel section:last-child { border-bottom: none; }
 #panel h4 { margin: 0 0 8px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
