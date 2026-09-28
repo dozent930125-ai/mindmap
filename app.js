@@ -3,6 +3,7 @@
 
   // ---------- Constants ----------
   const STORAGE_KEY = 'mindmap-canvas-v1';
+  const VIEW_KEY = 'mindmap-view-v1'; // per-viewer pan/zoom when the map is shared
   const MIN_ZOOM = 0.1;
   const MAX_ZOOM = 4;
   const GRID = 20;
@@ -116,7 +117,7 @@
   }
 
   function undo() {
-    if (!undoStack.length) return;
+    if (!undoStack.length || !editable()) return;
     lastEdit = { key: null, time: 0 };
     redoStack.push(snapshot());
     restore(undoStack.pop());
@@ -124,7 +125,7 @@
   }
 
   function redo() {
-    if (!redoStack.length) return;
+    if (!redoStack.length || !editable()) return;
     undoStack.push(snapshot());
     restore(redoStack.pop());
     updateHistoryButtons();
@@ -139,6 +140,11 @@
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
+      if (cloud.db) {
+        pushChanges();
+        try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)); } catch (_) { /* per-viewer only */ }
+        return;
+      }
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, view }));
       } catch (_) { /* storage unavailable: keep working in memory */ }
@@ -444,6 +450,7 @@
 
   // ---------- Mutations ----------
   function addNode(type, at) {
+    if (!editable()) return null;
     checkpoint();
     const size = DEFAULT_SIZE[type];
     if (!at) {
@@ -472,6 +479,7 @@
   }
 
   function setPortCount(node, side, count, record = true) {
+    if (!editable()) return;
     count = clamp(count, 0, MAX_PORTS);
     if (count === node.ports[side]) return;
     if (record) checkpoint();
@@ -485,7 +493,7 @@
   }
 
   function deleteSelection() {
-    if (!selection) return;
+    if (!selection || !editable()) return;
     checkpoint();
     if (selection.kind === 'node') {
       const ids = new Set(selection.ids);
@@ -531,7 +539,7 @@
     if (!clipboard) {
       try { clipboard = JSON.parse(localStorage.getItem(CLIPBOARD_KEY)); } catch (_) { clipboard = null; }
     }
-    if (!clipboard || !clipboard.nodes.length) return;
+    if (!clipboard || !clipboard.nodes.length || !editable()) return;
     checkpoint();
     clipboard.pastes += 1;
     const offset = PASTE_OFFSET * clipboard.pastes;
@@ -554,6 +562,7 @@
   }
 
   function connect(from, to) {
+    if (!editable()) return;
     if (from.node === to.node && from.side === to.side && from.index === to.index) return;
     const same = (a, b) => a.node === b.node && a.side === b.side && a.index === b.index;
     if (state.edges.some((e) => (same(e.from, from) && same(e.to, to)) || (same(e.from, to) && same(e.to, from)))) return;
@@ -567,6 +576,7 @@
 
   // ---------- Label editing ----------
   function startEdit(id) {
+    if (!editable()) return;
     const node = findNode(id);
     const el = nodeEls.get(id);
     if (!node || !el) return;
@@ -668,6 +678,10 @@
     } else if (t.classList.contains('edge-hit')) {
       select({ kind: 'edge', id: t.dataset.id });
       return;
+    } else if (!editable() && !t.classList.contains('edge-hit')) {
+      // Read-only: clicking a node only selects it.
+      const id = nodeEl.dataset.id;
+      select(selectNodes(additive && !isSelected(id) ? [...selectedIds(), id] : [id]));
     } else if (t.classList.contains('port')) {
       const from = portFromEl(t);
       drag = { kind: 'connect', ...start, from, target: null };
@@ -809,7 +823,7 @@
       startEdit(nodeEl.dataset.id);
     } else if (!ev.target.classList.contains('edge-hit')) {
       const node = addNode('rect', toWorld(ev.clientX, ev.clientY));
-      startEdit(node.id);
+      if (node) startEdit(node.id);
     }
   });
 
@@ -893,7 +907,7 @@
     } else if (mod && ev.key.toLowerCase() === 'c') {
       if (copySelection()) ev.preventDefault();
     } else if (mod && ev.key.toLowerCase() === 'x') {
-      if (copySelection()) {
+      if (editable() && copySelection()) {
         ev.preventDefault();
         deleteSelection();
       }
@@ -936,18 +950,43 @@
   $('#btn-zoom-out').addEventListener('click', () => zoomCenter(1 / 1.2));
   $('#btn-fit').addEventListener('click', fitView);
 
-  $('#btn-clear').addEventListener('click', () => {
-    if (!state.nodes.length) return;
-    if (!confirm('캔버스를 모두 지울까요? (실행 취소로 되돌릴 수 있습니다)')) return;
+  // Two-step confirm inside the page (native confirm() is unavailable in the claude.ai viewer).
+  const btnClear = $('#btn-clear');
+  let clearArmed = null;
+  btnClear.addEventListener('click', () => {
+    if (!state.nodes.length || !editable()) return;
+    if (!clearArmed) {
+      btnClear.textContent = '정말 지울까요?';
+      btnClear.classList.add('danger');
+      clearArmed = setTimeout(disarmClear, 3000);
+      return;
+    }
+    disarmClear();
     checkpoint();
     state = { nodes: [], edges: [] };
     selection = null;
     render();
     save();
+    toast('모두 지웠어요. Ctrl+Z로 되돌릴 수 있어요.');
   });
+  function disarmClear() {
+    clearTimeout(clearArmed);
+    clearArmed = null;
+    btnClear.textContent = '초기화';
+    btnClear.classList.remove('danger');
+  }
 
-  $('#btn-export').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  $('#btn-export').addEventListener('click', async () => {
+    const json = JSON.stringify(state, null, 2);
+    if (cloud.downloads) {
+      try {
+        await cloud.downloads.save({ filename: 'mindmap.json', data: json });
+      } catch (e) {
+        if (e && e.code !== 'declined') toast('파일을 저장하지 못했어요.');
+      }
+      return;
+    }
+    const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'mindmap.json';
@@ -956,7 +995,7 @@
   });
 
   const fileInput = $('#file-input');
-  $('#btn-import').addEventListener('click', () => fileInput.click());
+  $('#btn-import').addEventListener('click', () => { if (editable()) fileInput.click(); });
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files[0];
     fileInput.value = '';
@@ -970,7 +1009,7 @@
       render();
       fitView();
     } catch (_) {
-      alert('올바른 마인드맵 JSON 파일이 아닙니다.');
+      toast('마인드맵 JSON 파일이 아니에요. 내보내기로 저장한 파일을 선택하세요.');
     }
   });
 
@@ -978,6 +1017,7 @@
   // Applies fn to every selected node. Consecutive edits of the same property
   // (typing, dragging a slider or colour picker) collapse into a single undo step.
   function editNode(key, fn) {
+    if (!editable()) return;
     const nodes = selectedNodes();
     if (!nodes.length) return;
     const k = `${key}:${selectedIds().join(',')}`;
@@ -1081,9 +1121,233 @@
     ];
   }
 
-  const hadSaved = load();
-  if (!hadSaved) seed();
-  render();
-  if (hadSaved && view.k) applyView(); else fitView();
-  updateHistoryButtons();
+  // ---------- Toast ----------
+  const toastEl = $('#toast');
+  let toastTimer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.hidden = true; }, 3500);
+  }
+
+  // ---------- Cloud sync (when opened on claude.ai) ----------
+  // Each node and edge is one document (nodes/<id>, edges/<id>), so people editing
+  // different shapes at the same time don't overwrite each other.
+  const cloud = {
+    db: null,
+    downloads: null,
+    readOnly: false,
+    loaded: { nodes: false, edges: false },
+    known: new Map(),   // doc path -> canonical JSON we believe the server holds
+    remote: new Map(),  // doc path -> canonical JSON last delivered by the server
+    pending: new Map(), // doc path -> JSON to write, or null to delete
+    busy: new Set(),    // doc paths with a write in flight
+  };
+
+  function editable() {
+    return !cloud.readOnly && !(cloud.db && !(cloud.loaded.nodes && cloud.loaded.edges));
+  }
+
+  // JSON with sorted keys, so the same content always compares equal.
+  function canonical(v) {
+    if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+    if (v && typeof v === 'object') {
+      return `{${Object.keys(v).sort().filter((k) => v[k] !== undefined)
+        .map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`;
+    }
+    return JSON.stringify(v);
+  }
+
+  function pushChanges() {
+    if (!cloud.db || cloud.readOnly || !cloud.loaded.nodes || !cloud.loaded.edges) return;
+    const want = new Map();
+    for (const n of state.nodes) want.set(`nodes/${n.id}`, canonical(n));
+    for (const e of state.edges) want.set(`edges/${e.id}`, canonical(e));
+    for (const [path, json] of want) if (cloud.known.get(path) !== json) queueWrite(path, json);
+    for (const path of [...cloud.known.keys()]) if (!want.has(path)) queueWrite(path, null);
+  }
+
+  function queueWrite(path, json) {
+    if (json === null) cloud.known.delete(path); else cloud.known.set(path, json);
+    cloud.pending.set(path, json);
+    if (!cloud.busy.has(path)) flushDoc(path);
+  }
+
+  // One write at a time per document; later edits replace queued ones.
+  async function flushDoc(path) {
+    cloud.busy.add(path);
+    let retried = false;
+    try {
+      while (cloud.pending.has(path)) {
+        const json = cloud.pending.get(path);
+        cloud.pending.delete(path);
+        const ref = cloud.db.doc(path);
+        try {
+          if (json === null) await ref.delete(); else await ref.set(JSON.parse(json));
+        } catch (e) {
+          const code = e && e.code;
+          if (code === 'unavailable' && !retried) {
+            retried = true;
+            if (!cloud.pending.has(path)) cloud.pending.set(path, json);
+            await new Promise((r) => setTimeout(r, 500 + Math.random() * 1000));
+            continue;
+          }
+          cloud.pending.clear();
+          if (code === 'invalid_argument' || code === 'not_granted' || code === 'revoked') {
+            setReadOnly(true);
+          } else if (code === 'quota_exceeded') {
+            toast('저장 공간이 가득 찼어요. 도형이나 연결을 일부 지운 뒤 다시 시도하세요.');
+          } else {
+            toast('변경 내용을 저장하지 못했어요. 잠시 후 다시 시도하세요.');
+          }
+          revertToRemote();
+          return;
+        }
+      }
+    } finally {
+      cloud.busy.delete(path);
+    }
+  }
+
+  // Throw away local edits the server refused and show what it actually holds.
+  function revertToRemote() {
+    const nodes = [];
+    const edges = [];
+    for (const [path, json] of cloud.remote) {
+      (path.startsWith('nodes/') ? nodes : edges).push(JSON.parse(json));
+    }
+    const order = new Map(state.nodes.map((n, i) => [n.id, i]));
+    nodes.sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
+    state = { nodes: nodes.map(migrateNode), edges };
+    cloud.known = new Map(cloud.remote);
+    restoreSelection();
+    render();
+  }
+
+  function restoreSelection() {
+    if (selection && selection.kind === 'node') selection = selectNodes(selection.ids.filter(findNode));
+    else if (selection && !findEdge(selection.id)) selection = null;
+  }
+
+  function applyRemote(col, snap) {
+    let changed = false;
+    const dragging = new Set(drag && drag.origin ? drag.origin.map((o) => `nodes/${o.id}`) : []);
+    if (drag && drag.kind === 'resize') dragging.add(`nodes/${drag.id}`);
+    for (const ch of snap.docChanges()) {
+      const path = `${col}/${ch.doc.id}`;
+      const busy = cloud.busy.has(path) || cloud.pending.has(path) || dragging.has(path);
+      if (ch.type === 'removed') {
+        cloud.remote.delete(path);
+        if (busy || !cloud.known.has(path)) continue;
+        cloud.known.delete(path);
+        if (col === 'nodes') state.nodes = state.nodes.filter((n) => n.id !== ch.doc.id);
+        else state.edges = state.edges.filter((e) => e.id !== ch.doc.id);
+        changed = true;
+        continue;
+      }
+      const data = JSON.parse(JSON.stringify(ch.doc.data())); // snapshots are frozen
+      data.id = ch.doc.id;
+      const json = canonical(data);
+      cloud.remote.set(path, json);
+      if (busy || cloud.known.get(path) === json) continue;
+      cloud.known.set(path, json);
+      const list = col === 'nodes' ? state.nodes : state.edges;
+      const i = list.findIndex((x) => x.id === data.id);
+      const item = col === 'nodes' ? migrateNode(data) : data;
+      if (i >= 0) list[i] = item; else list.push(item);
+      changed = true;
+    }
+    const first = !cloud.loaded[col];
+    cloud.loaded[col] = true;
+    if (changed) {
+      restoreSelection();
+      render();
+    }
+    if (first && cloud.loaded.nodes && cloud.loaded.edges) onCloudLoaded();
+  }
+
+  function onCloudLoaded() {
+    document.body.classList.remove('loading');
+    let savedView = null;
+    try { savedView = JSON.parse(localStorage.getItem(VIEW_KEY)); } catch (_) { /* none */ }
+    if (savedView && savedView.k) { view = savedView; applyView(); } else fitView();
+    render();
+    if (!state.nodes.length && editable()) toast('빈 마인드맵이에요. 위의 버튼으로 도형을 추가해 보세요.');
+  }
+
+  function setReadOnly(on) {
+    cloud.readOnly = on;
+    document.body.classList.toggle('readonly', on);
+    $('#mode-badge').textContent = on ? '보기 전용' : '실시간 공유';
+    if (on) {
+      if (editingId) finishEdit(false);
+      render();
+    }
+  }
+
+  async function connectCloud() {
+    const db = await window.claude.use('db');
+    if (!db) return false;
+    cloud.db = db;
+    state = { nodes: [], edges: [] };
+    document.body.classList.add('cloud', 'loading');
+    $('#mode-badge').hidden = false;
+    $('#mode-badge').textContent = '실시간 공유';
+    render();
+
+    window.claude.use('downloads').then((d) => { cloud.downloads = d; });
+    window.claude.use('user').then(async (user) => {
+      if (!user) return;
+      if ((await user.can('data.write')) === false) setReadOnly(true);
+    });
+
+    const onError = (e) => {
+      if (e && e.code === 'revoked') setReadOnly(true);
+      else toast('실시간 연결이 끊겼어요. 페이지를 새로고침하세요.');
+    };
+    db.collection('nodes').onSnapshot((snap) => applyRemote('nodes', snap), onError);
+    db.collection('edges').onSnapshot((snap) => applyRemote('edges', snap), onError);
+    return true;
+  }
+
+  function bootLocal() {
+    const hadSaved = load();
+    if (!hadSaved) seed();
+    render();
+    if (hadSaved && view.k) applyView(); else fitView();
+  }
+
+  // Read-only bridge for the Claude chat panel (chat.js).
+  window.MindmapBridge = {
+    describe() {
+      const byId = new Map(state.nodes.map((n, i) => [n.id, i + 1]));
+      const name = (n) => (n.label || '').replace(/\s+/g, ' ').trim() || '(이름 없음)';
+      const kind = { rect: '사각형', ellipse: '원', diamond: '마름모', text: '텍스트' };
+      const lines = [`도형 ${state.nodes.length}개, 연결 ${state.edges.length}개`, '', '도형:'];
+      for (const n of state.nodes) lines.push(`- #${byId.get(n.id)} "${name(n)}" (${kind[n.type] || n.type})`);
+      lines.push('', '연결 (A → B):');
+      for (const e of state.edges) {
+        const a = findNode(e.from.node);
+        const b = findNode(e.to.node);
+        if (a && b) lines.push(`- #${byId.get(a.id)} "${name(a)}" → #${byId.get(b.id)} "${name(b)}"`);
+      }
+      const sel = selectedNodes();
+      if (sel.length) lines.push('', `사용자가 지금 선택한 도형: ${sel.map((n) => `#${byId.get(n.id)} "${name(n)}"`).join(', ')}`);
+      return lines.join('\n');
+    },
+    counts: () => ({ nodes: state.nodes.length, edges: state.edges.length, selected: selectedIds().length }),
+  };
+
+  (async () => {
+    updateHistoryButtons();
+    if (window.claude && typeof window.claude.use === 'function') {
+      document.body.classList.add('loading');
+      try {
+        if (await connectCloud()) return;
+      } catch (_) { /* fall back to this browser's storage */ }
+      document.body.classList.remove('loading');
+    }
+    bootLocal();
+  })();
 })();

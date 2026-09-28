@@ -9,13 +9,13 @@
 <body>
   <header class="toolbar">
     <div class="brand">Mindmap</div>
-    <div class="group">
+    <div class="group" data-edit>
       <button data-add="rect" title="사각형 추가">▭ 사각형</button>
       <button data-add="ellipse" title="원 추가">◯ 원</button>
       <button data-add="diamond" title="마름모 추가">◇ 마름모</button>
       <button data-add="text" title="텍스트 추가">T 텍스트</button>
     </div>
-    <div class="group">
+    <div class="group" data-edit>
       <button id="btn-undo" title="실행 취소 (Ctrl+Z)">↶</button>
       <button id="btn-redo" title="다시 실행 (Ctrl+Shift+Z)">↷</button>
       <button id="btn-delete" title="선택 항목 삭제 (Delete)">삭제</button>
@@ -27,10 +27,12 @@
       <button id="btn-fit" title="전체 보기">전체 보기</button>
     </div>
     <div class="group right">
+      <span id="mode-badge" class="badge" hidden>실시간 공유</span>
       <button id="btn-export" title="JSON으로 저장">내보내기</button>
-      <button id="btn-import" title="JSON 불러오기">불러오기</button>
-      <button id="btn-clear" title="모두 지우기">초기화</button>
+      <button id="btn-import" title="JSON 불러오기" data-edit>불러오기</button>
+      <button id="btn-clear" title="모두 지우기" data-edit>초기화</button>
       <input id="file-input" type="file" accept="application/json" hidden />
+      <button id="btn-chat" class="primary" title="Claude와 대화" hidden>Claude와 대화</button>
     </div>
   </header>
 
@@ -51,6 +53,8 @@
       <div id="node-layer"></div>
     </div>
     <div id="marquee"></div>
+    <div id="loading-note" class="loading-note">마인드맵을 불러오는 중…</div>
+    <div id="toast" class="toast" role="status" hidden></div>
     <div class="hint">
       빈 곳 드래그: 범위 선택 · Space/우클릭 드래그: 화면 이동 · 휠: 확대/축소 · Shift+클릭: 선택 추가 · 더블클릭: 이름 변경
     </div>
@@ -124,6 +128,28 @@
     </section>
   </aside>
 
+  <aside id="chat" aria-label="Claude 채팅" hidden>
+    <header class="chat-head">
+      <div class="chat-title">Claude</div>
+      <div id="chat-mode" class="segmented chat-mode" role="tablist">
+        <button data-mode="free" role="tab">그냥 대화</button>
+        <button data-mode="map" role="tab">마인드맵 보며 대화</button>
+      </div>
+      <button id="chat-close" class="icon" title="닫기">✕</button>
+    </header>
+    <div id="chat-log" class="chat-log" aria-live="polite"></div>
+    <div id="chat-context" class="chat-context"></div>
+    <form id="chat-form" class="chat-form">
+      <textarea id="chat-input" rows="2" placeholder="아이디어를 이야기해 보세요 (Enter 보내기, Shift+Enter 줄바꿈)"></textarea>
+      <div class="chat-actions">
+        <button type="button" id="chat-clear" class="ghost">대화 지우기</button>
+        <button type="button" id="chat-stop" hidden>중지</button>
+        <button type="submit" id="chat-send" class="primary">보내기</button>
+      </div>
+    </form>
+  </aside>
+
   <script src="app.js"></script>
+  <script src="chat.js"></script>
 </body>
 </html>
