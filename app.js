@@ -426,7 +426,7 @@
     panel.hidden = !node;
     btnDelete.disabled = !selection;
     if (!node) return;
-    panelTitle.textContent = nodes.length > 1 ? `${nodes.length}개 선택됨` : '';
+    panelTitle.textContent = nodes.length > 1 ? `· ${nodes.length}개 선택됨` : '';
     panelTitle.hidden = nodes.length < 2;
     labelSection.hidden = nodes.length > 1;
     if (document.activeElement !== propLabel) propLabel.value = node.label;
@@ -950,6 +950,39 @@
   $('#btn-zoom-out').addEventListener('click', () => zoomCenter(1 / 1.2));
   $('#btn-fit').addEventListener('click', fitView);
 
+  // "More" menu (export / import / clear).
+  const btnMore = $('#btn-more');
+  const moreMenu = $('#more-menu');
+  function showMenu(open) {
+    moreMenu.hidden = !open;
+    btnMore.setAttribute('aria-expanded', String(open));
+    if (!open) disarmClear();
+  }
+  btnMore.addEventListener('click', (ev) => { ev.stopPropagation(); showMenu(moreMenu.hidden); });
+  moreMenu.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (ev.target.closest('#btn-export, #btn-import')) showMenu(false);
+  });
+  document.addEventListener('click', () => { if (!moreMenu.hidden) showMenu(false); });
+
+  // Fullscreen: gives the canvas the whole screen when the page sits in a small frame.
+  const btnFullscreen = $('#btn-fullscreen');
+  if (document.fullscreenEnabled) btnFullscreen.hidden = false;
+  btnFullscreen.addEventListener('click', async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch (_) {
+      btnFullscreen.hidden = true;
+      toast('이 화면에서는 전체 화면을 쓸 수 없어요.');
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    btnFullscreen.classList.toggle('active', !!document.fullscreenElement);
+    btnFullscreen.querySelector('.t').textContent = document.fullscreenElement ? '전체 화면 끝내기' : '전체 화면';
+    applyView();
+  });
+
   // Two-step confirm inside the page (native confirm() is unavailable in the claude.ai viewer).
   const btnClear = $('#btn-clear');
   let clearArmed = null;
@@ -1102,6 +1135,22 @@
   });
 
   window.addEventListener('resize', applyView);
+
+  // Collapsible properties panel (starts collapsed on small screens).
+  const PANEL_KEY = 'mindmap-panel-collapsed';
+  const panelToggle = $('#panel-toggle');
+  function setPanelCollapsed(on) {
+    panel.classList.toggle('collapsed', on);
+    panelToggle.setAttribute('aria-expanded', String(!on));
+  }
+  let collapsedPref = null;
+  try { collapsedPref = JSON.parse(localStorage.getItem(PANEL_KEY)); } catch (_) { /* default */ }
+  setPanelCollapsed(collapsedPref ?? window.innerWidth <= 760);
+  panelToggle.addEventListener('click', () => {
+    const on = !panel.classList.contains('collapsed');
+    setPanelCollapsed(on);
+    try { localStorage.setItem(PANEL_KEY, JSON.stringify(on)); } catch (_) { /* per-viewer only */ }
+  });
 
   // ---------- Boot ----------
   function seed() {

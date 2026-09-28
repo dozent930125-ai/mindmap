@@ -10,29 +10,35 @@
   <header class="toolbar">
     <div class="brand">Mindmap</div>
     <div class="group" data-edit>
-      <button data-add="rect" title="사각형 추가">▭ 사각형</button>
-      <button data-add="ellipse" title="원 추가">◯ 원</button>
-      <button data-add="diamond" title="마름모 추가">◇ 마름모</button>
-      <button data-add="text" title="텍스트 추가">T 텍스트</button>
+      <button data-add="rect" title="사각형 추가"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5.5" width="14" height="9" rx="2.5"/></svg><span class="t">사각형</span></button>
+      <button data-add="ellipse" title="원 추가"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="10" cy="10" rx="7" ry="5.5"/></svg><span class="t">원</span></button>
+      <button data-add="diamond" title="마름모 추가"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 17 10 10 17 3 10z"/></svg><span class="t">마름모</span></button>
+      <button data-add="text" title="텍스트 추가"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h10M10 5v11"/></svg><span class="t">텍스트</span></button>
     </div>
     <div class="group" data-edit>
-      <button id="btn-undo" title="실행 취소 (Ctrl+Z)">↶</button>
-      <button id="btn-redo" title="다시 실행 (Ctrl+Shift+Z)">↷</button>
-      <button id="btn-delete" title="선택 항목 삭제 (Delete)">삭제</button>
+      <button id="btn-undo" title="실행 취소 (Ctrl+Z)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 5 3.5 8.5 7 12"/><path d="M4 8.5h8a4 4 0 0 1 0 8H9"/></svg></button>
+      <button id="btn-redo" title="다시 실행 (Ctrl+Shift+Z)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 5l3.5 3.5L13 12"/><path d="M16 8.5H8a4 4 0 0 0 0 8h3"/></svg></button>
+      <button id="btn-delete" title="선택 항목 삭제 (Delete)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10"/></svg><span class="t">삭제</span></button>
     </div>
     <div class="group">
-      <button id="btn-zoom-out" title="축소">−</button>
+      <button id="btn-zoom-out" title="축소"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 10h10"/></svg></button>
       <span id="zoom-label">100%</span>
-      <button id="btn-zoom-in" title="확대">+</button>
-      <button id="btn-fit" title="전체 보기">전체 보기</button>
+      <button id="btn-zoom-in" title="확대"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 10h10M10 5v10"/></svg></button>
+      <button id="btn-fit" title="도형 전체가 보이게 맞추기"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V4h4M16 8V4h-4M4 12v4h4M16 12v4h-4"/></svg><span class="t">전체 보기</span></button>
+      <button id="btn-fullscreen" title="전체 화면" hidden><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V3h4M17 7V3h-4M3 13v4h4M17 13v4h-4M7 7h6v6H7z"/></svg><span class="t">전체 화면</span></button>
     </div>
     <div class="group right">
       <span id="mode-badge" class="badge" hidden>실시간 공유</span>
-      <button id="btn-export" title="JSON으로 저장">내보내기</button>
-      <button id="btn-import" title="JSON 불러오기" data-edit>불러오기</button>
-      <button id="btn-clear" title="모두 지우기" data-edit>초기화</button>
+      <div class="menu-wrap">
+        <button id="btn-more" title="더보기" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="10" r=".6"/><circle cx="10" cy="10" r=".6"/><circle cx="15.5" cy="10" r=".6"/></svg></button>
+        <div id="more-menu" class="menu" role="menu" hidden>
+          <button id="btn-export" role="menuitem">내보내기 (JSON 저장)</button>
+          <button id="btn-import" role="menuitem" data-edit>불러오기</button>
+          <button id="btn-clear" role="menuitem" data-edit>초기화</button>
+        </div>
+      </div>
       <input id="file-input" type="file" accept="application/json" hidden />
-      <button id="btn-chat" class="primary" title="Claude와 대화" hidden>Claude와 대화</button>
+      <button id="btn-chat" class="primary" title="Claude와 대화" hidden><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"/></svg><span class="t">Claude와 대화</span></button>
     </div>
   </header>
 
@@ -61,7 +67,10 @@
   </main>
 
   <aside id="panel" hidden>
-    <div id="panel-title" class="panel-title" hidden></div>
+    <button id="panel-toggle" class="panel-toggle" aria-expanded="true">
+      <span>속성</span><span id="panel-title" class="panel-title" hidden></span>
+      <svg class="chev" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8l4 4 4-4"/></svg>
+    </button>
     <section id="label-section">
       <h4>이름</h4>
       <textarea id="prop-label" rows="2"></textarea>
